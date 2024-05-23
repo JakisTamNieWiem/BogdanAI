@@ -1,0 +1,11 @@
+import { BaseInteraction, SlashCommandBuilder } from "discord.js"
+
+export default {
+	data: new SlashCommandBuilder()
+		.setName('temp')
+		.setDescription('temporary')
+		.addStringOption((option) => option.setName('temp').setDescription('temporary').setRequired(true)),
+	async execute(interaction: BaseInteraction){
+		
+	}
+}
