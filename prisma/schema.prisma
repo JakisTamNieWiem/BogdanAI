@@ -25,3 +25,87 @@ model Spell {
     higher_levels String?
     classes       String[]
 }
+
+model Quest {
+    id          Int      @id @default(autoincrement())
+    name        String
+    campaign    Campaign @relation(fields: [campaignId], references: [id])
+    campaignId  Int
+    NPC         NPC?     @relation(fields: [NPCId], references: [id])
+    NPCId       Int?
+    description String[]
+    shortDesc   String
+    level       Int      @default(1)
+    location    String
+    rewards     String
+    active      Boolean  @default(true)
+
+    @@unique([campaignId, name])
+}
+
+model Campaign {
+    id      Int      @id @default(autoincrement())
+    name    String
+    dm      String
+    players String[]
+    quest   Quest[]
+    NPC     NPC[]
+    guildId Int
+}
+
+model NPC {
+    id          Int      @id @default(autoincrement())
+    name        String
+    description String
+    campaign    Campaign @relation(fields: [campaignId], references: [id])
+    campaignId  Int
+    quests      Quest[]
+    portrait    Bytes
+}
+
+model PlayerCharacter {
+    id          Int     @id @default(autoincrement())
+    owner       String
+    name        String
+    class       Class
+    level       Int     @default(1)
+    stats       Int[]   @default([10, 10, 10, 10, 10, 10])
+    proficiency Skill[]
+    expertise   Skill[]
+}
+
+enum Class {
+    Barbarian
+    Bard
+    Cleric
+    Druid
+    Fighter
+    Monk
+    Paladin
+    Ranger
+    Rogue
+    Sorcerer
+    Warlock
+    Wizard
+}
+
+enum Skill {
+    Acrobatics
+    AnimalHandling
+    Arcana
+    Athletics
+    Deception
+    History
+    Insight
+    Intimidation
+    Investigation
+    Medicine
+    Nature
+    Perception
+    Performance
+    Persuasion
+    Religion
+    Stealing
+    Stealth
+    Survival
+}
