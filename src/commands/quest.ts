@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { BaseInteraction, SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { BaseInteraction, SlashCommandBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } from 'discord.js';
 
 export default {
 	data: new SlashCommandBuilder()
@@ -22,18 +22,19 @@ export default {
 		).addSubcommand(subcommand =>
 			subcommand
 				.setName('edit')
-				.setDescription('Edit a quests.')
-				.addStringOption(option => option.setName('quest').setDescription('Name of the quest.').setAutocomplete(true).setRequired(true)),
+				.setDescription('Edit a quest.')
+				.addIntegerOption(option => option.setName('quest').setDescription('Name of the quest.').setAutocomplete(true).setRequired(true)),
 		).addSubcommand(subcommand =>
 			subcommand
 				.setName('delete')
-				.setDescription('Delete a quests.')
-				.addStringOption(option => option.setName('quest').setDescription('Name of the quest.').setAutocomplete(true).setRequired(true)),
+				.setDescription('Delete a quest.')
+				.addIntegerOption(option => option.setName('campaign').setDescription('Campaign that the quests belong to.').setAutocomplete(true).setRequired(true))
+				.addIntegerOption(option => option.setName('quest').setDescription('Name of the quest.').setAutocomplete(true).setRequired(true)),
 		).addSubcommand(subcommand =>
 			subcommand
 				.setName('inspect')
 				.setDescription('Show details about a quests.')
-				.addStringOption(option => option.setName('quest').setDescription('Name of the quest.').setAutocomplete(true).setRequired(true)),
+				.addIntegerOption(option => option.setName('quest').setDescription('Name of the quest.').setAutocomplete(true).setRequired(true)),
 		),
 	async execute(interaction: BaseInteraction, db: PrismaClient) {
 		if (interaction.isChatInputCommand()) {
@@ -42,7 +43,7 @@ export default {
 					const quests = await db.quest.findMany({
 						where: {
 							campaign: {
-								name: interaction.options.getString('campaign') ?? '',
+								name: interaction.options.getString('campaign', true),
 							},
 						},
 						select: {
@@ -98,74 +99,70 @@ export default {
 				}
 				case 'edit':
 					break;
-				case 'delete':
+				case 'delete': {
+					const cancel = new ButtonBuilder()
+						.setCustomId('quest-delete-cancel')
+						.setLabel('Cancel')
+						.setStyle(ButtonStyle.Secondary);
+					const confirm = new ButtonBuilder()
+						.setCustomId('quest-delete-confirm')
+						.setLabel('Confirm')
+						.setStyle(ButtonStyle.Danger);
+					const row = new ActionRowBuilder<ButtonBuilder>()
+						.addComponents(cancel, confirm);
+					const response = await interaction.reply({
+						content: 'Are you sure you want to delete this quest?',
+						components: [row],
+					});
+					const collectorFilter = (i: { user: { id: string; }; }) => i.user.id === interaction.user.id;
+					try {
+						const confirmation = await response.awaitMessageComponent({ filter: collectorFilter, time: 60_000 });
+						if (confirmation.customId === 'quest-delete-confirm') {
+							const deletedQuest = await db.quest.delete({
+								where: {
+									id: interaction.options.getInteger('quest', true),
+								},
+							});
+							confirmation.update({ content: `${deletedQuest.name} has been deleted!`, components: [] });
+						}
+						else {
+							await confirmation.update({ content: 'Action cancelled', components: [] });
+						}
+					}
+					catch (e) {
+						await interaction.editReply({ content: 'Confirmation not received within 1 minute, cancelling', components: [] });
+					}
 					break;
-				case 'inspect':
+				}
+				case 'inspect': {
+					const quest = await db.quest.findUniqueOrThrow({
+						where: {
+							id: interaction.options.getInteger('quest', true),
+						},
+						include: {
+							NPC: {
+								select: {
+									name: true,
+								},
+							},
+						},
+					});
+					const embed = new EmbedBuilder()
+						.setColor(0x00ff00)
+						.setTitle(quest.name)
+						.addFields(quest.NPC?.name ? [{ name: 'NPC', value: quest.NPC.name }] : [])
+						.addFields([
+							{ name: 'Description', value: quest.description.slice(0, quest.level).join(' ') },
+							{ name: 'Location', value: quest.location },
+							{ name: 'Rewards', value: quest.rewards },
+						]);
+					interaction.reply({ embeds: [embed] });
 					break;
+				}
 			}
 		}
 		else if (interaction.isAutocomplete()) {
 			const focusedValue = interaction.options.getFocused(true);
-			// const choices = focusedValue.name === 'campaign' ? await db.campaign.findMany({
-			// 	where: {
-			// 		OR: [
-			// 			{ dm: interaction.member?.user.username },
-			// 			{ players: { has: interaction.member?.user.username } },
-			// 		],
-			// 		name: {
-			// 			startsWith: focusedValue.value,
-			// 			mode: 'insensitive',
-			// 		},
-			// 	},
-			// 	select: {
-			// 		name: true,
-			// 	},
-			// 	orderBy: {
-			// 		name: 'asc',
-			// 	},
-			// 	take: 10,
-			// }) : focusedValue.name === 'npc' ? await db.nPC.findMany({
-			// 	where: {
-			// 		campaign: {
-			// 			OR: [
-			// 				{ dm: interaction.member?.user.username },
-			// 				{ players: { has: interaction.member?.user.username } },
-			// 			],
-			// 		},
-			// 		name: {
-			// 			startsWith: focusedValue.value,
-			// 			mode: 'insensitive',
-			// 		},
-			// 	},
-			// 	select: {
-			// 		name: true,
-			// 	},
-			// 	orderBy: {
-			// 		name: 'asc',
-			// 	},
-			// 	take: 10,
-			// })
-			// 	: await db.quest.findMany({
-			// 		where: {
-			// 			campaign: {
-			// 				OR: [
-			// 					{ dm: interaction.member?.user.username },
-			// 					{ players: { has: interaction.member?.user.username } },
-			// 				],
-			// 			},
-			// 			name: {
-			// 				startsWith: focusedValue.value,
-			// 				mode: 'insensitive',
-			// 			},
-			// 		},
-			// 		select: {
-			// 			name: true,
-			// 		},
-			// 		orderBy: {
-			// 			name: 'asc',
-			// 		},
-			// 		take: 10,
-			// 	});
 			const choices = await db.campaign.findMany({
 				where: {
 					OR: [
@@ -178,9 +175,11 @@ export default {
 					},
 				},
 				select: {
+					id: true,
 					name: true,
 					NPC: {
 						select: {
+							id: true,
 							name: true,
 						},
 						orderBy: {
@@ -190,6 +189,7 @@ export default {
 					},
 					quest: {
 						select: {
+							id: true,
 							name: true,
 						},
 						orderBy: {
@@ -205,21 +205,21 @@ export default {
 			});
 			if (focusedValue.name === 'campaign') {
 				await interaction.respond(choices.map((campaign) => {
-					return { name: campaign.name, value: campaign.name };
+					return { name: campaign.name, value: campaign.id };
 				}));
 			}
 			else if (focusedValue.name === 'npc') {
 				await interaction.respond(choices.flatMap((campaign) => {
 					return campaign.NPC;
 				}).map((npc) => {
-					return { name: npc.name, value: npc.name };
+					return { name: npc.name, value: npc.id };
 				}));
 			}
 			else if (focusedValue.name === 'quest') {
 				await interaction.respond(choices.flatMap((campaign) => {
 					return campaign.quest;
 				}).map((quest) => {
-					return { name: quest.name, value: quest.name };
+					return { name: quest.name, value: quest.id };
 				}));
 			}
 

@@ -55,10 +55,13 @@ export default {
 						mode: 'insensitive',
 					},
 				},
+				select: {
+					name: true,
+				},
+				take: 10,
 			});
 
-			const filtered = choices.map((spell) => spell.name).filter((choice) => choice.toLowerCase().startsWith(focusedValue.toLowerCase())).slice(0, 10);
-			await interaction.respond(filtered.map((choice) => ({ name: choice, value: choice })));
+			await interaction.respond(choices.map((choice) => ({ name: choice.name, value: choice.name })));
 		}
 	},
 };
