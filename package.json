@@ -5,7 +5,8 @@
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
-		"test": "wt -p \"Windows PowerShell\" -d ./ --title Nodemon --tabColor #01B3A7 --suppressApplicationTitle nodemon --watch ./bin --ignore ./data/* -e js,ts -- --no-warnings ./bin/main.js ^| pino-pretty -i pid,hostname -t ; nt -p \"Windows PowerShell\" -d ./ --title TSC --tabColor #0088CC --suppressApplicationTitle tsc.cmd --watch ; nt -p \"Windows PowerShell\" -d ./ --title \"Prisma Studio\" --tabColor #9200A6 --suppressApplicationTitle prisma studio",
+		"predev": "docker start overgod-postgres",
+		"dev": "wt -p \"Windows PowerShell\" -d ./ --title Nodemon --tabColor #01B3A7 --suppressApplicationTitle nodemon --watch ./bin --ignore ./data/* -e js,ts -- --no-warnings ./bin/main.js ^| pino-pretty -i pid,hostname -t ; nt -p \"Windows PowerShell\" -d ./ --title TSC --tabColor #0088CC --suppressApplicationTitle tsc.cmd --watch ; nt -p \"Windows PowerShell\" -d ./ --title \"Prisma Studio\" --tabColor #9200A6 --suppressApplicationTitle prisma studio",
 		"start": "nodemon --watch ./bin --signal SIGINT --ignore ./data/* -e js,ts -- --no-warnings ./src/main.ts | pino-pretty -i pid,hostname -t",
 		"lint": "eslint src/",
 		"lint:fix": "eslint --fix src/"
