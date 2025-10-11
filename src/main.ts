@@ -1,89 +1,178 @@
-import { Client, IntentsBitField, REST, Routes, Collection, Command } from 'discord.js';
-import * as fs from 'fs';
-import path from 'path';
-import { pino } from 'pino';
-import { PrismaClient } from '@prisma/client';
-import 'dotenv/config';
+import { Routes } from "discord-api-types/v10";
+import {
+	Client,
+	Collection,
+	type Command,
+	IntentsBitField,
+	REST,
+} from "discord.js";
+import "dotenv/config";
+import { db } from "./db/index.js";
+import logger from "./logger.js";
 
-const client = new Client({
-	intents: [IntentsBitField.Flags.Guilds, IntentsBitField.Flags.GuildMembers, IntentsBitField.Flags.GuildMessages, IntentsBitField.Flags.GuildVoiceStates, IntentsBitField.Flags.MessageContent],
-	presence: { status: 'idle' },
-});
-const logger = pino();
-const prisma = new PrismaClient();
+/**
+ * Load commands from the generated .jtnw folder
+ */
+async function loadCommandsFromGenerated(): Promise<
+	Collection<string, Command>
+> {
+	const commands = new Collection<string, Command>();
+	const commandsPath = `${process.cwd()}/.jtnw/commands`;
 
-client.commands = new Collection();
-const commands: Command[] = [];
-const commandsPath = path.join(process.cwd(), 'bin/commands');
-const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith('.js'));
+	try {
+		// Get list of generated command files
+		const { readdirSync } = await import("fs");
+		const commandFiles = readdirSync(commandsPath).filter((file: string) =>
+			file.endsWith(".ts"),
+		);
 
-for (const file of commandFiles) {
-	const filePath = path.join('file:///', commandsPath, file);
-	const command = await import(filePath);
+		// Load each command from the generated files
+		for (const file of commandFiles) {
+			const commandName = file.replace(".ts", "");
+			try {
+				const commandModule = await import(`${commandsPath}/${file}`);
+				const command = commandModule.default;
 
-	// Set a new item in the Collection with the key as the command name and the value as the exported module
-	if ('data' in command.default && 'execute' in command.default) {
-		client.commands.set(command.default.data.name, command);
-		commands.push(command.default.data);
+				if (command && command.data) {
+					commands.set(command.data.name, command);
+					logger.info(`Loaded command: ${command.data.name}`);
+				}
+			} catch (error) {
+				logger.error(`Failed to load command ${commandName}:`, error);
+			}
+		}
+	} catch (error) {
+		logger.error(
+			"Failed to load generated commands. Make sure to run the build script first:",
+			error,
+		);
+		process.exit(1);
 	}
-	else {
-		logger.warn(`The command at ${filePath} is missing a required "data" or "execute" property.`);
-	}
+
+	logger.info(`Loaded ${commands.size} commands from .jtnw folder`);
+	return commands;
 }
 
+/**
+ * Initialize and start the bot
+ */
+async function startBot() {
+	logger.info("Starting bot initialization...");
 
-const rest = new REST({ version: '10' }).setToken(process.env.TOKEN ?? '');
+	const client = new Client({
+		intents: [
+			IntentsBitField.Flags.DirectMessages,
+			IntentsBitField.Flags.Guilds,
+			IntentsBitField.Flags.GuildMembers,
+			IntentsBitField.Flags.GuildMessages,
+			IntentsBitField.Flags.GuildVoiceStates,
+			IntentsBitField.Flags.MessageContent,
+		],
+		presence: { status: "idle" },
+	});
 
-try {
-	logger.info('Started refreshing application (/) commands.');
-	await rest.put(Routes.applicationGuildCommands('1130242686142660618', '547182730656481280'), { body: commands });
+	logger.info("Discord client created, loading commands...");
 
-	logger.info('Successfully reloaded application (/) commands.');
-	logger.info(`Loaded commands: ${commands.map((elem) => elem.name)}`);
-}
-catch (error) {
-	logger.error(error);
-}
+	// Load commands from generated .jtnw folder
+	client.commands = await loadCommandsFromGenerated();
+	const commandsJSON = client.commands.map((c) => c.data.toJSON());
+	logger.info(
+		`Commands loaded and converted to JSON: ${commandsJSON.length} commands`,
+	);
+	const rest = new REST({ version: "10" }).setToken(process.env.TOKEN!);
+	logger.info("REST client created, starting command registration...");
 
-client.on('ready', (c) => {
-	logger.info(`Logged in as ${c.user.tag}`);
-});
+	try {
+		logger.info("Started refreshing application (/) commands.");
 
-client.on('interactionCreate', async (interaction) => {
-	let command: Command | undefined;
-	if (interaction.isChatInputCommand() || interaction.isAutocomplete()) {
-		command = interaction.client.commands.get(interaction.commandName);
+		// Add timeout for command registration
+		const commandRegistrationPromise = Promise.all([
+			rest.put(
+				Routes.applicationGuildCommands(
+					"1130242686142660618",
+					"547182730656481280",
+				),
+				{ body: commandsJSON },
+			),
+			rest.put(Routes.applicationCommands("1130242686142660618"), {
+				body: commandsJSON,
+			}),
+		]);
+
+		await Promise.race([
+			commandRegistrationPromise,
+			new Promise((_, reject) =>
+				setTimeout(
+					() => reject(new Error("Command registration timeout")),
+					10000,
+				),
+			),
+		]);
+
+		logger.info("Successfully reloaded application (/) commands.");
+		logger.info(
+			`Loaded commands: ${client.commands.map((elem) => elem.data.name)}`,
+		);
+	} catch (error) {
+		logger.error("Failed to register commands:", error);
 	}
-	else if (interaction.isButton()) {
-		if (interaction?.message?.interaction?.commandName === undefined) {
-			logger.error('Button intearaction command name not found!');
+
+	logger.info("Setting up event handlers...");
+	client.on("clientReady", (c) => {
+		logger.info(`Logged in as ${c.user.tag}`);
+	});
+
+	client.on("interactionCreate", async (interaction) => {
+		let command: Command | undefined;
+		if (interaction.isChatInputCommand() || interaction.isAutocomplete()) {
+			command = interaction.client.commands.get(interaction.commandName);
+		} else if (interaction.isButton()) {
+			if (interaction?.message?.interaction?.commandName === undefined) {
+				logger.error("Button interaction command name not found!");
+				return;
+			}
+			command = interaction.client.commands.get(
+				interaction?.message?.interaction?.commandName,
+			);
+		} else {
+			logger.info(`Unsupported interaction ${interaction.type}`);
 			return;
 		}
-		command = interaction.client.commands.get(interaction?.message?.interaction?.commandName);
-	}
-	else if (interaction.isModalSubmit()) {
-		command = interaction.client.commands.get(interaction.customId.split('-')[0]);
-	}
-	else {
-		logger.info(`Unsupported interaction ${interaction.type}`);
-		return;
-	}
-	try {
-		if (command) {
-			await command.default.execute(interaction, prisma);
-		}
-	}
-	catch (error) {
-		logger.error(error);
-		if (interaction.isChatInputCommand()) {
-			if ((interaction.replied || interaction.deferred)) {
-				await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
+		try {
+			if (command) {
+				// All subcommand handling is now done within the command's execute function
+				await command.execute(interaction);
 			}
-			else {
-				await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+		} catch (error) {
+			logger.error(error);
+			if (interaction.isChatInputCommand()) {
+				if (interaction.replied || interaction.deferred) {
+					await interaction.followUp({
+						content: "There was an error while executing this command!",
+						ephemeral: true,
+					});
+				} else {
+					await interaction.reply({
+						content: "There was an error while executing this command!",
+						ephemeral: true,
+					});
+				}
 			}
 		}
-	}
-});
+	});
 
-client.login(process.env.TOKEN);
+	logger.info("Event handlers set up, attempting to login...");
+
+	// Add timeout for bot login
+	await Promise.race([
+		client.login(process.env.TOKEN),
+		new Promise((_, reject) =>
+			setTimeout(() => reject(new Error("Bot login timeout")), 15000),
+		),
+	]);
+
+	logger.info("Bot login process initiated");
+}
+
+// Start the bot
+startBot().catch(console.error);

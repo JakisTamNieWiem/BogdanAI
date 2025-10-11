@@ -5,36 +5,47 @@
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
-		"predev": "docker start overgod-postgres",
-		"dev": "wt -p \"Windows PowerShell\" -d ./ --title Nodemon --tabColor #01B3A7 --suppressApplicationTitle nodemon --watch ./bin --ignore ./data/* -e js,ts -- --no-warnings ./bin/main.js ^| pino-pretty -i pid,hostname -t ; nt -p \"Windows PowerShell\" -d ./ --title TSC --tabColor #0088CC --suppressApplicationTitle tsc.cmd --watch ; nt -p \"Windows PowerShell\" -d ./ --title \"Prisma Studio\" --tabColor #9200A6 --suppressApplicationTitle prisma studio",
+		"build": "bun run ./scripts/build-commands.ts",
+		"predev": "bun run build && echo 'Build completed, starting dev server...'",
+		"dev": "bun --bun --watch run ./src/main.ts",
 		"start": "nodemon --watch ./bin --signal SIGINT --ignore ./data/* -e js,ts -- --no-warnings ./src/main.ts | pino-pretty -i pid,hostname -t",
 		"lint": "eslint src/",
-		"lint:fix": "eslint --fix src/"
-	},
-	"prisma": {
-		"seed": "tsx prisma/seed.ts"
+		"lint:fix": "eslint --fix src/",
+		"seed": "bun run ./src/db/seed.ts",
+		"migrate": "bun run ./src/db/migrate.ts",
+		"add-command": "bun run ./scripts/add-command.ts"
 	},
 	"keywords": [],
 	"author": "JakisTamNieWiem",
 	"license": "ISC",
 	"dependencies": {
-		"@napi-rs/canvas": "^0.1.52",
 		"@prisma/client": "5.14.0",
-		"discord.js": "^14.15.2",
-		"dotenv": "^16.4.5",
-		"pino": "^9.1.0"
+		"@supabase/supabase-js": "^2.50.5",
+		"better-sqlite3": "^12.4.1",
+		"discord-api-types": "^0.38.26",
+		"discord.js": "^14.22.1",
+		"dotenv": "^16.6.1",
+		"drizzle-orm": "^0.44.5",
+		"merge-images": "^2.0.0",
+		"pg": "^8.16.3",
+		"pino": "^9.7.0"
 	},
 	"devDependencies": {
-		"@eslint/js": "^9.3.0",
-		"@types/node": "^20.12.12",
-		"eslint": "^9.3.0",
-		"globals": "^15.3.0",
+		"@biomejs/biome": "2.1.1",
+		"@eslint/js": "^9.30.1",
+		"@types/bun": "^1.2.20",
+		"@types/node": "^20.19.7",
+		"@types/pg": "^8.15.4",
+		"bun-types": "^1.2.22",
+		"drizzle-kit": "^0.31.4",
+		"globals": "^15.15.0",
 		"lorem-ipsum": "^2.0.8",
-		"nodemon": "^3.1.0",
-		"prisma": "^5.14.0",
+		"nodemon": "^3.1.10",
+		"pino-pretty": "^11.3.0",
+		"prisma": "^5.22.0",
 		"ts-node": "^10.9.2",
-		"tsx": "^4.11.0",
-		"typescript": "^5.4.5",
-		"typescript-eslint": "^7.10.0"
+		"tsx": "^4.20.3",
+		"typescript": "^5.8.3",
+		"typescript-eslint": "^7.18.0"
 	}
 }

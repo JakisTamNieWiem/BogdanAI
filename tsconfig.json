@@ -1,38 +1,68 @@
 {
-    "compilerOptions": { /* Docs: [https://www.typescriptlang.org/tsconfig](https://www.typescriptlang.org/tsconfig) */
-      "target": "ESNext",
-      "module": "NodeNext",
-      "outDir": "bin",
-      "rootDir": "./src",
-      "strict": true,
-      "noImplicitAny": false,
-      "strictNullChecks": true,
-      "checkJs": true,
-      "allowJs": true,
-      "moduleResolution": "NodeNext",
-      
-      
-      "types": [
-        "node"
-      ],
-      "lib": [
-        "ES2023"
-      ],
-      "esModuleInterop": true,
-      "skipLibCheck": false,
-      "forceConsistentCasingInFileNames": true,
-      "allowUnreachableCode": true,
-      "useUnknownInCatchVariables": false,  // TypeScript 4.4+ only!
-      "resolveJsonModule": true,
-
-       
-  },
-    "include": [
-      "src/**/*.ts",
-      "src/**/*.js"
-, "src/commands/template"    ],
-    "exclude": [
-      "node_modules",
-      "<node_internals>/**",
-    ]
-  }
+	"compilerOptions": {
+		/* Docs: [https://www.typescriptlang.org/tsconfig](https://www.typescriptlang.org/tsconfig) */
+		// Environment setup & latest features
+		"lib": [
+			"ESNext"
+		],
+		"target": "ESNext",
+		"module": "Preserve",
+		"moduleDetection": "force",
+		"jsx": "react-jsx",
+		"allowJs": true,
+		// Bundler mode
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+		// Best practices
+		"strict": true,
+		"skipLibCheck": true,
+		"noFallthroughCasesInSwitch": true,
+		"noUncheckedIndexedAccess": true,
+		"noImplicitOverride": true,
+		// Some stricter flags (disabled by default)
+		"noUnusedLocals": false,
+		"noUnusedParameters": false,
+		"noPropertyAccessFromIndexSignature": false,
+		"types": [
+			"bun-types"
+		],
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"allowUnreachableCode": true,
+		"useUnknownInCatchVariables": false, // TypeScript 4.4+ only!
+		"resolveJsonModule": true,
+		"paths": {
+			"@/*": [
+				"./src/*"
+			],
+			"@commands/*": [
+				"./src/commands/*"
+			],
+			"@events/*": [
+				"./src/events/*"
+			],
+			"@utils/*": [
+				"./src/utils/*"
+			],
+			"@config/*": [
+				"./src/config/*"
+			],
+			"@data/*" : [
+				"./data/*"
+			],
+		}
+	},
+	"include": [
+		"src/**/*.ts",
+		"src/**/*.js",
+		"src/commands/template.ts",
+		".jtnw/commands/*.ts",
+	],
+	"exclude": [
+		"node_modules",
+		"<node_internals>/**",
+		"drizzle/**/*"
+	]
+}

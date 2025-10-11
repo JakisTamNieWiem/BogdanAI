@@ -5,7 +5,8 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-    provider = "prisma-client-js"
+    provider      = "prisma-client-js"
+    binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -23,6 +24,7 @@ model Spell {
     duration      String
     description   String
     higher_levels String?
+    source        String   @default("Player's Handbook")
     classes       String[]
 }
 
@@ -60,7 +62,7 @@ model NPC {
     campaign    Campaign @relation(fields: [campaignId], references: [id])
     campaignId  Int
     quests      Quest[]
-    portrait    Bytes
+    portrait    String
 }
 
 model PlayerCharacter {

@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__ide__getDiagnostics",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__get-library-docs",
+      "Bash(bun run:*)",
+      "Bash(bun:*)",
+      "Bash(bunx:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,16 +1,17 @@
-import { PrismaClient } from '@prisma/client';
-import { Interaction, Collection } from 'discord.js';
+import { Collection, SlashCommandBuilder } from "discord.js";
 
-declare module 'discord.js' {
+declare module "discord.js" {
 	export interface Client {
-		commands: Collection<string, Command>
+		commands: Collection<string, Command>;
 	}
 
 	export interface Command {
-		name: string,
-		description: string,
-		default: {
-			execute: (message: Interaction, db?: PrismaClient) => Promise<void>
-		}
+		data: SlashCommandBuilder;
+		execute: (interaction: BaseInteraction) => Promise<void>;
+		subcommands?: Collection<
+			string,
+			(interaction: BaseInteraction) => Promise<void>
+		>;
+		autocomplete?: (interaction: BaseInteraction) => Promise<void>;
 	}
 }
