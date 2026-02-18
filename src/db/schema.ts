@@ -38,33 +38,43 @@ export const quests = sqliteTable(
 		rewards: text("rewards").notNull(),
 		active: integer("active", { mode: "boolean" }).default(true).notNull(),
 	},
-	(table) => {
-		return {
-			campaignId_name_unique: uniqueIndex("campaignId_name_unique").on(
-				table.campaignId,
-				table.name,
-			),
-		};
-	},
+	(table) => [
+		uniqueIndex("Quest_campaignId_name_unique").on(
+			table.campaignId,
+			table.name,
+		),
+	],
 );
 
 export const campaigns = sqliteTable("Campaign", {
 	id: integer("id").primaryKey({ autoIncrement: true }),
 	name: text("name").notNull(),
+	description: text("description"),
 	dm: text("dm").notNull(), // Discord user ID of the DM
 	players: text("players", { mode: "json" }).$type<string[]>().notNull(), // Array of Discord user IDs
 	guildId: integer("guildId").notNull(), // Discord guild ID
 });
 
-export const npcs = sqliteTable("NPC", {
-	id: integer("id").primaryKey({ autoIncrement: true }),
-	name: text("name").notNull(),
-	description: text("description").notNull(),
-	campaignId: integer("campaignId")
-		.notNull()
-		.references(() => campaigns.id, { onDelete: "cascade" }),
-	portrait: text("portrait").notNull(),
-});
+export const npcs = sqliteTable(
+	"NPC",
+	{
+		id: integer("id").primaryKey({ autoIncrement: true }),
+		name: text("name").notNull(),
+		description: text("description")
+			.notNull()
+			.default("No description provided."),
+		strengths: text("strengths"),
+		weaknesses: text("weaknesses"),
+		note: text("note"),
+		portrait: text("portrait"),
+		campaignId: integer("campaignId")
+			.notNull()
+			.references(() => campaigns.id, { onDelete: "cascade" }),
+	},
+	(table) => [
+		uniqueIndex("NPC_campaignId_name_unique").on(table.campaignId, table.name),
+	],
+);
 
 export const playerCharacters = sqliteTable("PlayerCharacter", {
 	id: integer("id").primaryKey({ autoIncrement: true }),

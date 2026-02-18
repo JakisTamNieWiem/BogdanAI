@@ -6,15 +6,34 @@ import {
 	EmbedBuilder,
 	LabelBuilder,
 	ModalBuilder,
+	SlashCommandBuilder,
 	TextInputStyle,
 } from "discord.js";
 import { and, eq } from "drizzle-orm";
 
 export default {
+	data: new SlashCommandBuilder()
+		.setName("edit")
+		.setDescription("Add a new NPC")
+		.addStringOption((option) =>
+			option
+				.setName("campaign")
+				.setDescription("The campaign from which the NPC will be edited")
+				.setRequired(true)
+				.setAutocomplete(true),
+		)
+		.addStringOption((option) =>
+			option
+				.setName("name")
+				.setDescription("The name of the npc to edit")
+				.setRequired(true)
+				.setAutocomplete(true),
+		),
+
 	async execute(interaction: BaseInteraction) {
 		if (!interaction.isChatInputCommand()) return;
-
 		const campaignName = interaction.options.getString("campaign", true);
+		const npcName = interaction.options.getString("name", true);
 		const userId = interaction.user.id;
 		const guildId = interaction.guild?.id;
 
@@ -46,20 +65,24 @@ export default {
 				});
 				return;
 			}
+			// Check if NPC with this name already exists in the campaign
+			const existingNPC = await db
+				.select()
+				.from(npcs)
+				.where(and(eq(npcs.name, npcName), eq(npcs.campaignId, campaign.id)))
+				.limit(1);
 
-			// Check if user is the DM
-			if (campaign.dm !== userId) {
+			if (existingNPC.length === 0) {
 				await interaction.reply({
-					content: "Only the DM can add NPCs to a campaign.",
+					content: `An NPC named "${npcName}" doesn't exists in campaign "${campaignName}".`,
 					flags: "Ephemeral",
 				});
 				return;
 			}
-
 			// Create and show modal
 			const modal = new ModalBuilder()
-				.setCustomId(`add-npc-${campaign.id}`)
-				.setTitle(`Add NPC to ${campaignName}`);
+				.setCustomId(`edit-npc-${campaign.id}`)
+				.setTitle(`Edit NPC in ${campaignName}`);
 
 			// Add text input components
 			const nameInput = new LabelBuilder()
@@ -67,6 +90,7 @@ export default {
 				.setTextInputComponent((component) =>
 					component
 						.setCustomId("npc-name")
+						.setValue(npcName)
 						.setStyle(TextInputStyle.Short)
 						.setPlaceholder("Enter the NPC's name")
 						.setRequired(true)
@@ -79,9 +103,11 @@ export default {
 				.setTextInputComponent((component) =>
 					component
 						.setCustomId("npc-description")
+						.setValue(existingNPC[0]?.description || "")
 						.setStyle(TextInputStyle.Paragraph)
 						.setPlaceholder("Enter the NPC's description")
-						.setMaxLength(1024),
+						.setRequired(true)
+						.setMaxLength(256),
 				);
 
 			const portraitInput = new LabelBuilder()
@@ -89,9 +115,10 @@ export default {
 				.setTextInputComponent((component) =>
 					component
 						.setCustomId("npc-portrait")
+						.setValue(existingNPC[0]?.portrait || "No portrait provided")
 						.setStyle(TextInputStyle.Short)
 						.setPlaceholder("Enter the NPC's portrait URL (optional)")
-						.setMaxLength(256),
+						.setMaxLength(100),
 				);
 
 			modal.addLabelComponents(nameInput, descriptionInput, portraitInput);
@@ -102,7 +129,7 @@ export default {
 			const submittedInteraction = await interaction.awaitModalSubmit({
 				filter: (modalInteraction) =>
 					modalInteraction.user.id === userId &&
-					modalInteraction.customId === `add-npc-${campaign.id}`,
+					modalInteraction.customId === `edit-npc-${campaign.id}`,
 				time: 60_000, // 60 seconds timeout
 			});
 
@@ -114,33 +141,26 @@ export default {
 				submittedInteraction.fields.getTextInputValue("npc-portrait") ||
 				"No portrait provided";
 
+			if (!guildId) {
+				await interaction.reply({
+					content: "This command can only be used in a server.",
+					flags: "Ephemeral",
+				});
+				return;
+			}
+
 			// Validate input
 			if (name.length < 1 || name.length > 100) {
-				await submittedInteraction.reply({
+				await interaction.reply({
 					content: "NPC name must be between 1 and 100 characters.",
 					flags: "Ephemeral",
 				});
 				return;
 			}
 
-			if (description.length > 1024) {
-				await submittedInteraction.reply({
-					content: "NPC description must be max 1024 characters.",
-					flags: "Ephemeral",
-				});
-				return;
-			}
-
-			// Check if NPC with this name already exists in the campaign
-			const existingNPC = await db
-				.select()
-				.from(npcs)
-				.where(and(eq(npcs.name, name), eq(npcs.campaignId, campaign.id)))
-				.limit(1);
-
-			if (existingNPC.length > 0) {
-				await submittedInteraction.reply({
-					content: `An NPC named "${name}" already exists in campaign "${campaignName}".`,
+			if (description.length < 1 || description.length > 2000) {
+				await interaction.reply({
+					content: "NPC description must be between 1 and 256 characters.",
 					flags: "Ephemeral",
 				});
 				return;
@@ -148,31 +168,32 @@ export default {
 
 			// Create the new NPC
 			const [newNPC] = await db
-				.insert(npcs)
-				.values({
+				.update(npcs)
+				.set({
 					name,
 					description,
 					portrait,
 					campaignId: campaign.id,
 				})
+				.where(eq(npcs.id, parseInt(npcName, 10)))
 				.returning();
 
 			if (!newNPC) {
-				await submittedInteraction.reply({
-					content: "There was an error adding the NPC. Please try again.",
+				await interaction.reply({
+					content: "There was an error editing the NPC. Please try again.",
 					flags: "Ephemeral",
 				});
 				return;
 			}
 
 			logger.info(
-				`User ${submittedInteraction.user.tag} added NPC "${name}" to campaign "${campaignName}"`,
+				`User ${interaction.user.tag} edited NPC "${name}" to campaign "${campaignName}"`,
 			);
 
 			const embed = new EmbedBuilder()
-				.setTitle("NPC Added! 🧙‍♂️")
+				.setTitle("NPC Changed! 🧙‍♂️")
 				.setDescription(
-					`Successfully added **${name}** to campaign **${campaignName}**`,
+					`Successfully changed **${name}** to campaign **${campaignName}**`,
 				)
 				.setImage(portrait.startsWith("http") ? portrait : null)
 				.addFields(
@@ -183,11 +204,11 @@ export default {
 				)
 				.setColor("Green")
 				.setTimestamp()
-				.setFooter({ text: "Added by " + submittedInteraction.user.tag });
+				.setFooter({ text: "Changed by " + interaction.user.tag });
 
-			await submittedInteraction.reply({ embeds: [embed] });
+			await interaction.reply({ embeds: [embed] });
 		} catch (error) {
-			logger.error("Error adding NPC:", error);
+			logger.error("Error editing NPC:", error);
 
 			// Check if it's a timeout error
 			if (error.message?.includes("time")) {
@@ -197,12 +218,12 @@ export default {
 				});
 			} else if (interaction.replied || interaction.deferred) {
 				await interaction.followUp({
-					content: "There was an error adding the NPC. Please try again.",
+					content: "There was an error editing the NPC. Please try again.",
 					flags: "Ephemeral",
 				});
 			} else {
 				await interaction.reply({
-					content: "There was an error adding the NPC. Please try again.",
+					content: "There was an error editing the NPC. Please try again.",
 					flags: "Ephemeral",
 				});
 			}

@@ -238,7 +238,7 @@ Use `src/commands/template.ts` as a starting point for new commands:
 
 ```typescript
 import { SlashCommandBuilder, BaseInteraction } from "discord.js";
-import logger from "@/logger.js";
+import { logger } from "@/logger.js";
 
 export default {
     data: new SlashCommandBuilder()

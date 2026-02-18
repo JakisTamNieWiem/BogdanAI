@@ -1,8 +1,8 @@
-import { SlashCommandBuilder, BaseInteraction, EmbedBuilder } from "discord.js";
 import { db } from "@/db/index.js";
 import { campaigns } from "@/db/schema.js";
-import { eq, and } from "drizzle-orm";
-import logger from "@/logger.js";
+import { logger } from "@/logger.js";
+import { BaseInteraction, EmbedBuilder, SlashCommandBuilder } from "discord.js";
+import { eq } from "drizzle-orm";
 
 export default {
 	data: new SlashCommandBuilder()
@@ -34,7 +34,7 @@ export default {
 			if (!campaign) {
 				await interaction.reply({
 					content: `Campaign "${campaignName}" not found.`,
-					ephemeral: true,
+					flags: "Ephemeral",
 				});
 				return;
 			}
@@ -43,8 +43,9 @@ export default {
 			if (campaign.dm !== userId) {
 				await interaction.reply({
 					content: "Only the DM can delete a campaign.",
-					ephemeral: true,
+					flags: "Ephemeral",
 				});
+
 				return;
 			}
 
@@ -70,7 +71,7 @@ export default {
 			logger.error("Error deleting campaign:", error);
 			await interaction.reply({
 				content: "There was an error deleting the campaign. Please try again.",
-				ephemeral: true,
+				flags: "Ephemeral",
 			});
 		}
 	},

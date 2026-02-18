@@ -1,8 +1,8 @@
-import { SlashCommandBuilder, BaseInteraction, EmbedBuilder } from "discord.js";
 import { db } from "@/db/index.js";
 import { campaigns } from "@/db/schema.js";
+import { logger } from "@/logger.js";
+import { BaseInteraction, EmbedBuilder, SlashCommandBuilder } from "discord.js";
 import { eq } from "drizzle-orm";
-import logger from "@/logger.js";
 
 export default {
 	data: new SlashCommandBuilder()
@@ -33,7 +33,7 @@ export default {
 		if (!targetUser) {
 			await interaction.reply({
 				content: "Invalid user specified.",
-				ephemeral: true,
+				flags: "Ephemeral",
 			});
 			return;
 		}
@@ -49,7 +49,7 @@ export default {
 			if (!campaign) {
 				await interaction.reply({
 					content: `Campaign "${campaignName}" not found.`,
-					ephemeral: true,
+					flags: "Ephemeral",
 				});
 				return;
 			}
@@ -58,7 +58,7 @@ export default {
 			if (campaign.dm !== userId) {
 				await interaction.reply({
 					content: "Only the DM can add players to a campaign.",
-					ephemeral: true,
+					flags: "Ephemeral",
 				});
 				return;
 			}
@@ -66,8 +66,9 @@ export default {
 			// Check if user is trying to add themselves
 			if (targetUser.id === userId) {
 				await interaction.reply({
-					content: "You cannot add yourself as a player. You are already the DM.",
-					ephemeral: true,
+					content:
+						"You cannot add yourself as a player. You are already the DM.",
+					flags: "Ephemeral",
 				});
 				return;
 			}
@@ -77,7 +78,7 @@ export default {
 			if (currentPlayers.includes(targetUser.id)) {
 				await interaction.reply({
 					content: `${targetUser.username} is already a player in this campaign.`,
-					ephemeral: true,
+					flags: "Ephemeral",
 				});
 				return;
 			}
@@ -116,7 +117,7 @@ export default {
 			logger.error("Error adding player:", error);
 			await interaction.reply({
 				content: "There was an error adding the player. Please try again.",
-				ephemeral: true,
+				flags: "Ephemeral",
 			});
 		}
 	},

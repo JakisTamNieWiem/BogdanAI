@@ -1,8 +1,8 @@
-import { SlashCommandBuilder, BaseInteraction, EmbedBuilder } from "discord.js";
 import { db } from "@/db/index.js";
 import { campaigns } from "@/db/schema.js";
+import { logger } from "@/logger.js";
+import { BaseInteraction, EmbedBuilder, SlashCommandBuilder } from "discord.js";
 import { eq } from "drizzle-orm";
-import logger from "@/logger.js";
 
 export default {
 	data: new SlashCommandBuilder()
@@ -32,7 +32,7 @@ export default {
 			if (!campaign) {
 				await interaction.reply({
 					content: `Campaign "${campaignName}" not found.`,
-					ephemeral: true,
+					flags: "Ephemeral",
 				});
 				return;
 			}
@@ -61,12 +61,26 @@ export default {
 					{ name: "Campaign ID", value: campaign.id.toString(), inline: true },
 					{ name: "Dungeon Master", value: dmDisplay, inline: true },
 					{
+						name: "Description",
+						value: campaign.description || "No description",
+						inline: false,
+					},
+
+					{
 						name: "Player Count",
 						value: playerIds.length.toString(),
 						inline: true,
 					},
-					{ name: "Players", value: playersText || "No players", inline: false },
-					{ name: "Guild ID", value: campaign.guildId.toString(), inline: true },
+					{
+						name: "Players",
+						value: playersText || "No players",
+						inline: false,
+					},
+					{
+						name: "Guild ID",
+						value: campaign.guildId.toString(),
+						inline: true,
+					},
 				)
 				.setColor("Purple")
 				.setTimestamp()
@@ -80,7 +94,7 @@ export default {
 			await interaction.reply({
 				content:
 					"There was an error fetching campaign information. Please try again.",
-				ephemeral: true,
+				flags: "Ephemeral",
 			});
 		}
 	},

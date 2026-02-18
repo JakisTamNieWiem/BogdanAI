@@ -1,5 +1,5 @@
-import { spells } from "@/db/schema.js";
 import { db } from "@/db/index.js";
+import { spells } from "@/db/schema.js";
 import {
 	ApplicationIntegrationType,
 	BaseInteraction,
@@ -36,7 +36,7 @@ export default {
 			if (!spellName) {
 				await interaction.reply({
 					content: "Please provide a spell name.",
-					ephemeral: true,
+					flags: "Ephemeral",
 				});
 				return;
 			}
@@ -51,7 +51,7 @@ export default {
 			if (!spell) {
 				await interaction.reply({
 					content: "Spell not found",
-					ephemeral: true,
+					flags: "Ephemeral",
 				});
 				return;
 			}

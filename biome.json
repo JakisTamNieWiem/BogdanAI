@@ -3,7 +3,12 @@
 	"vcs": { "enabled": false, "clientKind": "git", "useIgnoreFile": false },
 	"files": {
 		"ignoreUnknown": false,
-		"includes": ["src/**/*.ts", "!drizzle/**/*"]
+		"includes": [
+			"src/**/*.ts",
+			"scripts/**/*.ts",
+			".jtnw/commands/*",
+			"!drizzle/**/*"
+		]
 	},
 	"formatter": { "enabled": true, "indentStyle": "tab" },
 	"linter": {

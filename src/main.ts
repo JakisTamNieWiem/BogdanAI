@@ -1,4 +1,4 @@
-import { Routes } from "discord-api-types/v10";
+import { InteractionContextType, Routes } from "discord-api-types/v10";
 import {
 	Client,
 	Collection,
@@ -6,9 +6,8 @@ import {
 	IntentsBitField,
 	REST,
 } from "discord.js";
-import "dotenv/config";
-import { db } from "./db/index.js";
-import logger from "./logger.js";
+import { readdirSync } from "fs";
+import { logger } from "./logger.js";
 
 /**
  * Load commands from the generated .jtnw folder
@@ -17,21 +16,25 @@ async function loadCommandsFromGenerated(): Promise<
 	Collection<string, Command>
 > {
 	const commands = new Collection<string, Command>();
-	const commandsPath = `${process.cwd()}/.jtnw/commands`;
+	const commandsPath = `${process.cwd()}/src/commands`;
 
 	try {
 		// Get list of generated command files
-		const { readdirSync } = await import("fs");
-		const commandFiles = readdirSync(commandsPath).filter((file: string) =>
-			file.endsWith(".ts"),
+
+		const commandFiles = readdirSync(commandsPath, { withFileTypes: true }).map(
+			(path) => {
+				if (path.isFile() && path.name.endsWith(".ts")) return path.name;
+				else if (path.isDirectory()) return path.name + "/index.ts";
+			},
 		);
 
 		// Load each command from the generated files
 		for (const file of commandFiles) {
+			if (!file) continue;
 			const commandName = file.replace(".ts", "");
 			try {
 				const commandModule = await import(`${commandsPath}/${file}`);
-				const command = commandModule.default;
+				const command = commandModule.default as Command;
 
 				if (command && command.data) {
 					commands.set(command.data.name, command);
@@ -68,7 +71,7 @@ async function startBot() {
 			IntentsBitField.Flags.GuildVoiceStates,
 			IntentsBitField.Flags.MessageContent,
 		],
-		presence: { status: "idle" },
+		presence: { status: "invisible" },
 	});
 
 	logger.info("Discord client created, loading commands...");
@@ -94,8 +97,13 @@ async function startBot() {
 				),
 				{ body: commandsJSON },
 			),
+
 			rest.put(Routes.applicationCommands("1130242686142660618"), {
-				body: commandsJSON,
+				body: commandsJSON.filter(
+					(cmd) =>
+						cmd.contexts &&
+						InteractionContextType.PrivateChannel in cmd.contexts,
+				),
 			}),
 		]);
 
@@ -149,12 +157,12 @@ async function startBot() {
 				if (interaction.replied || interaction.deferred) {
 					await interaction.followUp({
 						content: "There was an error while executing this command!",
-						ephemeral: true,
+						flags: "Ephemeral",
 					});
 				} else {
 					await interaction.reply({
 						content: "There was an error while executing this command!",
-						ephemeral: true,
+						flags: "Ephemeral",
 					});
 				}
 			}

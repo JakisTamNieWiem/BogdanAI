@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-import { readdirSync, writeFileSync, mkdirSync, existsSync } from "fs";
-import { join, dirname } from "path";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,7 +17,7 @@ interface CommandOptions {
 
 // Command templates
 const SIMPLE_COMMAND_TEMPLATE = `import { SlashCommandBuilder, BaseInteraction } from "discord.js";
-import logger from "@/logger.js";
+import { logger } from "@/logger.js";
 
 export default {
 	data: new SlashCommandBuilder()
@@ -37,7 +37,7 @@ export default {
 `;
 
 const COMPLEX_COMMAND_INDEX_TEMPLATE = `import { SlashCommandBuilder, BaseInteraction } from "discord.js";
-import logger from "@/logger.js";
+import { logger } from "@/logger.js";
 
 export default {
 	data: new SlashCommandBuilder()
@@ -56,7 +56,7 @@ export default {
 `;
 
 const COMPLEX_COMMAND_SUBCOMMAND_TEMPLATE = `import { SlashCommandBuilder, BaseInteraction } from "discord.js";
-import logger from "@/logger.js";
+import { logger } from "@/logger.js";
 
 export default {
 	data: new SlashCommandBuilder()
@@ -101,7 +101,7 @@ export default {
 `;
 
 const COMPLEX_COMMAND_AUTOCOMPLETE_TEMPLATE = `import { BaseInteraction } from "discord.js";
-import logger from "@/logger.js";
+import { logger } from "@/logger.js";
 
 export default async function handleAutocomplete(interaction: BaseInteraction) {
 	if (!interaction.isAutocomplete()) return;
@@ -146,18 +146,24 @@ export default async function handleAutocomplete(interaction: BaseInteraction) {
 /**
  * Simple template replacement (no Handlebars dependency)
  */
-function replaceTemplate(template: string, variables: Record<string, any>): string {
+function replaceTemplate(
+	template: string,
+	variables: Record<string, any>,
+): string {
 	let result = template;
 
 	for (const [key, value] of Object.entries(variables)) {
-		const regex = new RegExp(`{{${key}}}`, 'g');
+		const regex = new RegExp(`{{${key}}}`, "g");
 		result = result.replace(regex, String(value));
 	}
 
 	// Handle simple conditionals
-	result = result.replace(/{{#if (\w+)}}([\s\S]*?){{\/if}}/g, (match, varName, content) => {
-		return variables[varName] ? content : '';
-	});
+	result = result.replace(
+		/{{#if (\w+)}}([\s\S]*?){{\/if}}/g,
+		(match, varName, content) => {
+			return variables[varName] ? content : "";
+		},
+	);
 
 	return result;
 }
@@ -172,13 +178,13 @@ function getExistingCommands(): string[] {
 	const commands: string[] = [];
 
 	for (const item of items) {
-		if (item.name.startsWith('_') || item.name.startsWith('.')) continue;
+		if (item.name.startsWith("_") || item.name.startsWith(".")) continue;
 
 		if (item.isFile() && item.name.match(/\.(ts|js)$/)) {
-			commands.push(item.name.replace(/\.(ts|js)$/, ''));
+			commands.push(item.name.replace(/\.(ts|js)$/, ""));
 		} else if (item.isDirectory()) {
 			// Check if it has an index.ts file
-			if (existsSync(join(commandsDir, item.name, 'index.ts'))) {
+			if (existsSync(join(commandsDir, item.name, "index.ts"))) {
 				commands.push(item.name);
 			}
 		}
@@ -195,7 +201,9 @@ async function createCommand(options: CommandOptions) {
 
 	// Validate command name
 	if (!name || !name.match(/^[a-z0-9-_]+$/i)) {
-		console.error("❌ Invalid command name. Use only letters, numbers, hyphens, and underscores.");
+		console.error(
+			"❌ Invalid command name. Use only letters, numbers, hyphens, and underscores.",
+		);
 		process.exit(1);
 	}
 
@@ -211,12 +219,11 @@ async function createCommand(options: CommandOptions) {
 		const filePath = join(commandsDir, `${name}.ts`);
 		const template = replaceTemplate(SIMPLE_COMMAND_TEMPLATE, {
 			name,
-			description: description || `A new simple command called ${name}`
+			description: description || `A new simple command called ${name}`,
 		});
 
 		writeFileSync(filePath, template);
 		console.log(`✅ Created simple command: ${filePath}`);
-
 	} else if (type === "complex") {
 		// Create directory
 		const commandDir = join(commandsDir, name);
@@ -226,26 +233,29 @@ async function createCommand(options: CommandOptions) {
 		const indexPath = join(commandDir, "index.ts");
 		const indexTemplate = replaceTemplate(COMPLEX_COMMAND_INDEX_TEMPLATE, {
 			name,
-			description: description || `A new complex command called ${name}`
+			description: description || `A new complex command called ${name}`,
 		});
 		writeFileSync(indexPath, indexTemplate);
 		console.log(`✅ Created complex command index: ${indexPath}`);
 
 		// Create example subcommand
 		const subcommandPath = join(commandDir, "example.ts");
-		const subcommandTemplate = replaceTemplate(COMPLEX_COMMAND_SUBCOMMAND_TEMPLATE, {
-			name,
-			subcommand: "example",
-			description: "Example subcommand",
-			options: [
-				{
-					type: "addStringOption",
-					name: "input",
-					description: "Example input",
-					required: false
-				}
-			]
-		});
+		const subcommandTemplate = replaceTemplate(
+			COMPLEX_COMMAND_SUBCOMMAND_TEMPLATE,
+			{
+				name,
+				subcommand: "example",
+				description: "Example subcommand",
+				options: [
+					{
+						type: "addStringOption",
+						name: "input",
+						description: "Example input",
+						required: false,
+					},
+				],
+			},
+		);
 		writeFileSync(subcommandPath, subcommandTemplate);
 		console.log(`✅ Created example subcommand: ${subcommandPath}`);
 
@@ -257,16 +267,18 @@ async function createCommand(options: CommandOptions) {
 
 	// Build commands
 	console.log("\n🔨 Building commands...");
-	const { spawn } = await import('child_process');
-	const buildProcess = spawn('bun', ['run', 'build'], {
-		stdio: 'inherit',
-		cwd: projectRoot
+	const { spawn } = await import("child_process");
+	const buildProcess = spawn("bun", ["run", "build"], {
+		stdio: "inherit",
+		cwd: projectRoot,
 	});
 
-	buildProcess.on('close', (code) => {
+	buildProcess.on("close", (code) => {
 		if (code === 0) {
 			console.log(`\n🎉 Command "${name}" created successfully!`);
-			console.log(`💡 Don't forget to run 'bun run dev' to test your new command.`);
+			console.log(
+				`💡 Don't forget to run 'bun run dev' to test your new command.`,
+			);
 		} else {
 			console.error(`❌ Build failed with code ${code}`);
 		}
@@ -304,30 +316,35 @@ Note:
 // Parse command line arguments
 const args = process.argv.slice(2);
 
-if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
+if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
 	showHelp();
 	process.exit(0);
 }
 
 const commandName = args[0];
+if (!commandName) {
+	console.error("❌ Command name is required.");
+	showHelp();
+	process.exit(1);
+}
 const options: CommandOptions = {
 	name: commandName,
 	type: "simple",
-	description: undefined
+	description: undefined,
 };
 
 // Parse options
 for (let i = 1; i < args.length; i++) {
 	const arg = args[i];
 
-	if (arg === '--type' || arg === '-t') {
+	if (arg === "--type" || arg === "-t") {
 		const type = args[++i];
-		if (type !== 'simple' && type !== 'complex') {
+		if (type !== "simple" && type !== "complex") {
 			console.error('❌ Type must be "simple" or "complex"');
 			process.exit(1);
 		}
 		options.type = type;
-	} else if (arg === '--description' || arg === '-d') {
+	} else if (arg === "--description" || arg === "-d") {
 		options.description = args[++i];
 	}
 }

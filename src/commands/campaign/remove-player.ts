@@ -1,8 +1,8 @@
-import { SlashCommandBuilder, BaseInteraction, EmbedBuilder } from "discord.js";
 import { db } from "@/db/index.js";
 import { campaigns } from "@/db/schema.js";
+import { logger } from "@/logger.js";
+import { BaseInteraction, EmbedBuilder, SlashCommandBuilder } from "discord.js";
 import { eq } from "drizzle-orm";
-import logger from "@/logger.js";
 
 export default {
 	data: new SlashCommandBuilder()
@@ -33,7 +33,7 @@ export default {
 		if (!targetUser) {
 			await interaction.reply({
 				content: "Invalid user specified.",
-				ephemeral: true,
+				flags: "Ephemeral",
 			});
 			return;
 		}
@@ -49,7 +49,7 @@ export default {
 			if (!campaign) {
 				await interaction.reply({
 					content: `Campaign "${campaignName}" not found.`,
-					ephemeral: true,
+					flags: "Ephemeral",
 				});
 				return;
 			}
@@ -58,7 +58,7 @@ export default {
 			if (campaign.dm !== userId) {
 				await interaction.reply({
 					content: "Only the DM can remove players from a campaign.",
-					ephemeral: true,
+					flags: "Ephemeral",
 				});
 				return;
 			}
@@ -68,7 +68,7 @@ export default {
 			if (!currentPlayers.includes(targetUser.id)) {
 				await interaction.reply({
 					content: `${targetUser.username} is not a player in this campaign.`,
-					ephemeral: true,
+					flags: "Ephemeral",
 				});
 				return;
 			}
@@ -94,7 +94,11 @@ export default {
 				.addFields(
 					{ name: "Campaign", value: campaignName, inline: true },
 					{ name: "Removed by", value: username, inline: true },
-					{ name: "Removed Player", value: targetUser.toString(), inline: true },
+					{
+						name: "Removed Player",
+						value: targetUser.toString(),
+						inline: true,
+					},
 					{
 						name: "Remaining Players",
 						value: updatedPlayers.length.toString(),
@@ -109,7 +113,7 @@ export default {
 			logger.error("Error removing player:", error);
 			await interaction.reply({
 				content: "There was an error removing the player. Please try again.",
-				ephemeral: true,
+				flags: "Ephemeral",
 			});
 		}
 	},

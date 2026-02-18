@@ -1,7 +1,23 @@
 #!/usr/bin/env bun
 
-import { readdirSync, statSync, writeFileSync, mkdirSync, existsSync } from "fs";
-import { join, dirname } from "path";
+import {
+	ApplicationCommandOptionType,
+	AutocompleteInteraction,
+	BaseInteraction,
+	SlashCommandBuilder,
+	type APIApplicationCommandOption,
+	type APIApplicationCommandOptionChoice,
+} from "discord.js";
+import {
+	existsSync,
+	mkdirSync,
+	readdir,
+	readdirSync,
+	statSync,
+	unlink,
+	writeFileSync,
+} from "fs";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -9,10 +25,10 @@ const __dirname = dirname(__filename);
 const projectRoot = join(__dirname, "..");
 
 interface CommandModule {
-	data: any;
-	execute?: (interaction: any) => Promise<void>;
-	subcommands?: Record<string, (interaction: any) => Promise<void>>;
-	autocomplete?: (interaction: any) => Promise<void>;
+	data: SlashCommandBuilder;
+	execute: (interaction: BaseInteraction) => Promise<void>;
+	subcommands?: Record<string, (interaction: BaseInteraction) => Promise<void>>;
+	autocomplete?: (interaction: AutocompleteInteraction) => Promise<void>;
 }
 
 /**
@@ -30,6 +46,15 @@ async function buildCommands() {
 	if (!existsSync(outputDir)) {
 		mkdirSync(outputDir, { recursive: true });
 	}
+	readdir(outputDir, (err, files) => {
+		if (err) throw err;
+
+		for (const file of files) {
+			unlink(join(outputDir, file), (err) => {
+				if (err) throw err;
+			});
+		}
+	});
 
 	const builtCommands = [];
 
@@ -45,28 +70,30 @@ async function buildCommands() {
 	await generateIndexFile(outputDir, builtCommands);
 
 	console.log(`✅ Built ${builtCommands.length} commands to ${outputDir}`);
-	console.log(`📁 Commands: ${builtCommands.map(c => c).join(", ")}`);
+	console.log(`📁 Commands: ${builtCommands.map((c) => c).join(", ")}`);
 }
 
 /**
  * Process simple command files (not in directories)
  */
-async function processSimpleCommands(commandsDir: string, outputDir: string): Promise<string[]> {
+async function processSimpleCommands(
+	commandsDir: string,
+	outputDir: string,
+): Promise<string[]> {
 	const commands: string[] = [];
-	const items = readdirSync(commandsDir);
+	const items = readdirSync(commandsDir, { withFileTypes: true });
 
 	for (const item of items) {
-		const fullPath = join(commandsDir, item);
-		const stats = statSync(fullPath);
+		const fullPath = join(commandsDir, item.name);
 
 		// Skip ignored commands (starting with _ or .)
-		if (item.startsWith('_') || item.startsWith('.')) {
+		if (item.name.startsWith("_") || item.name.startsWith(".")) {
 			console.log(`⏭️  Ignoring command: ${item}`);
 			continue;
 		}
 
-		if (stats.isFile() && item.match(/\.(ts|js)$/)) {
-			const commandName = item.replace(/\.(ts|js)$/, '');
+		if (item.isFile() && item.name.match(/\.(ts|js)$/)) {
+			const commandName = item.name.replace(/\.(ts|js)$/, "");
 			const outputPath = join(outputDir, `${commandName}.ts`);
 
 			// Generate merged command file
@@ -81,7 +108,10 @@ async function processSimpleCommands(commandsDir: string, outputDir: string): Pr
 /**
  * Process command groups (directories with index.ts and subcommands)
  */
-async function processCommandGroups(commandsDir: string, outputDir: string): Promise<string[]> {
+async function processCommandGroups(
+	commandsDir: string,
+	outputDir: string,
+): Promise<string[]> {
 	const commands: string[] = [];
 	const items = readdirSync(commandsDir);
 
@@ -90,19 +120,25 @@ async function processCommandGroups(commandsDir: string, outputDir: string): Pro
 		const stats = statSync(fullPath);
 
 		// Skip ignored commands (starting with _ or .)
-		if (item.startsWith('_') || item.startsWith('.')) {
+		if (item.startsWith("_") || item.startsWith(".")) {
 			console.log(`⏭️  Ignoring command directory: ${item}`);
 			continue;
 		}
 
 		if (stats.isDirectory()) {
-			const indexPath = join(fullPath, 'index.ts');
+			const indexPath = join(fullPath, "index.ts");
 			if (existsSync(indexPath)) {
 				const commandName = item;
 				const outputPath = join(outputDir, `${commandName}.ts`);
 
 				// Generate merged command file with subcommands
-				await generateMergedCommand(indexPath, outputPath, commandName, true, fullPath);
+				await generateMergedCommand(
+					indexPath,
+					outputPath,
+					commandName,
+					true,
+					fullPath,
+				);
 				commands.push(commandName);
 			}
 		}
@@ -119,7 +155,7 @@ async function generateMergedCommand(
 	outputPath: string,
 	commandName: string,
 	isGroup: boolean = false,
-	groupPath?: string
+	groupPath?: string,
 ) {
 	try {
 		// Import the main command module
@@ -144,18 +180,17 @@ async function generateMergedCommand(
 		const subcommands = await loadSubcommands(groupPath!);
 		const autocompleteModule = await loadAutocomplete(groupPath!);
 
-		// Collect all required imports
-		const imports = new Set<string>();
-		imports.add('import { SlashCommandBuilder, BaseInteraction, EmbedBuilder } from "discord.js";');
-		imports.add('import logger from "@/logger.js";');
-		imports.add('import { db } from "@/db/index.js";');
-		imports.add('import { campaigns } from "@/db/schema.js";');
-		imports.add('import { eq, like } from "drizzle-orm";');
+		// Collect all required imports dynamically from source files
+		const imports = await collectRequiredImports(
+			groupPath!,
+			subcommands,
+			autocompleteModule,
+		);
 
 		// Build command data with subcommands
 		let commandData = `new SlashCommandBuilder()
 			.setName("${mainCommand.data.name || commandName}")
-			.setDescription("${mainCommand.data.description || 'No description'}")`;
+			.setDescription("${mainCommand.data.description || "No description"}")`;
 
 		// Add subcommands to the builder
 		for (const subcommand of subcommands) {
@@ -168,6 +203,13 @@ async function generateMergedCommand(
 			// Add options for the subcommand
 			if (subData.options && subData.options.length > 0) {
 				for (const option of subData.options) {
+					// Skip subcommand options since we're already processing subcommands
+					if (
+						option.type === ApplicationCommandOptionType.Subcommand ||
+						option.type === ApplicationCommandOptionType.SubcommandGroup
+					) {
+						continue;
+					}
 					commandData += generateOptionBuilder(option, "					");
 				}
 			}
@@ -223,7 +265,9 @@ async function generateMergedCommand(
 				if (executeFunction) {
 					// Convert the function to a string and extract the body
 					const funcString = executeFunction.toString();
-					const functionBody = funcString.substring(funcString.indexOf('{') + 1, funcString.lastIndexOf('}')).trim();
+					const functionBody = funcString
+						.substring(funcString.indexOf("{") + 1, funcString.lastIndexOf("}"))
+						.trim();
 
 					subcommandHandlers += `\nasync function handle${capitalize(subName)}(interaction: BaseInteraction) {\n${functionBody}\n}`;
 				}
@@ -237,17 +281,21 @@ async function generateMergedCommand(
 		// Generate autocomplete handler using dynamic imports
 		let autocompleteHandler = "";
 		if (autocompleteModule) {
-			const autocompletePath = join(groupPath!, 'autocomplete.ts');
+			const autocompletePath = join(groupPath!, "autocomplete.ts");
 
 			try {
 				// Import the autocomplete module
 				const autoModule = await import(`file://${autocompletePath}`);
-				const autocompleteFunction = autoModule.default;
+				const autocompleteFunction = autoModule.default as (
+					interaction: AutocompleteInteraction,
+				) => Promise<void>;
 
 				if (autocompleteFunction) {
 					// Convert the function to a string and extract the body
 					const funcString = autocompleteFunction.toString();
-					const functionBody = funcString.substring(funcString.indexOf('{') + 1, funcString.lastIndexOf('}')).trim();
+					const functionBody = funcString
+						.substring(funcString.indexOf("{") + 1, funcString.lastIndexOf("}"))
+						.trim();
 
 					autocompleteHandler = `async function handleAutocomplete(interaction: BaseInteraction) {\n${functionBody}\n}`;
 				}
@@ -262,7 +310,7 @@ async function generateMergedCommand(
 		}
 
 		// Generate the complete command file
-		const fullContent = `${Array.from(imports).join('\n')}
+		const fullContent = `${Array.from(imports).join("\n")}
 
 export default {
 	data: ${commandData},
@@ -276,36 +324,221 @@ ${autocompleteHandler}`;
 
 		writeFileSync(outputPath, fullContent);
 		console.log(`📝 Generated merged command: ${commandName}`);
-
 	} catch (error) {
 		console.error(`❌ Failed to build command ${commandName}:`, error);
 	}
 }
 
 /**
+ * Collect all required imports by extracting them from source files using regex and consolidating them
+ */
+async function collectRequiredImports(
+	groupPath: string,
+	subcommands: CommandModule[],
+	autocompleteModule:
+		| ((interaction: AutocompleteInteraction) => Promise<void>)
+		| null,
+): Promise<Set<string>> {
+	// Use a Map to consolidate imports by module
+	const importsByModule = new Map<string, Set<string>>();
+	const sideEffectImports = new Set<string>();
+
+	// Helper function to extract imports from a file using regex
+	const extractImportsFromFile = async (filePath: string): Promise<void> => {
+		try {
+			const content = await readFileContent(filePath);
+
+			// More specific regex patterns for different import types
+			const namedImportRegex =
+				/import\s+(type\s+)?\{([^}]+)\}\s+from\s+["']([^"']+)["']/g;
+			const defaultImportRegex =
+				/import\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s+from\s+["']([^"']+)["']/g;
+			const namespaceImportRegex =
+				/import\s+\*\s+as\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s+from\s+["']([^"']+)["']/g;
+			const sideEffectImportRegex = /import\s+["']([^"']+)["']/g;
+
+			// Process named imports
+			let match;
+			while ((match = namedImportRegex.exec(content)) !== null) {
+				const [, , namedImports, module] = match;
+				if (!module) continue; // Skip if no module found
+
+				let importSet = importsByModule.get(module);
+				if (!importSet) {
+					importSet = new Set<string>();
+					importsByModule.set(module, importSet);
+				}
+				if (!namedImports) continue;
+				// Add all named imports
+				namedImports.split(",").forEach((imp) => {
+					const cleanImport = imp.trim();
+					if (cleanImport) {
+						importSet.add(cleanImport);
+					}
+				});
+			}
+
+			// Process default imports
+			const defaultImports = [...content.matchAll(defaultImportRegex)];
+			defaultImports.forEach(([, importName, module]) => {
+				if (!module || !importName) return; // Skip if no module found
+
+				let importSet = importsByModule.get(module);
+				if (!importSet) {
+					importSet = new Set<string>();
+					importsByModule.set(module, importSet);
+				}
+				importSet.add(importName);
+			});
+
+			// Process namespace imports
+			const namespaceImports = [...content.matchAll(namespaceImportRegex)];
+			namespaceImports.forEach(([, alias, module]) => {
+				if (!module) return; // Skip if no module found
+
+				let importSet = importsByModule.get(module);
+				if (!importSet) {
+					importSet = new Set<string>();
+					importsByModule.set(module, importSet);
+				}
+				importSet.add(`* as ${alias}`);
+			});
+
+			// Process side effect imports
+			const sideEffectMatches = [...content.matchAll(sideEffectImportRegex)];
+			sideEffectMatches.forEach(([, module]) => {
+				if (!module) return; // Skip if no module found
+				sideEffectImports.add(module);
+			});
+		} catch (error) {
+			console.warn(`⚠️  Could not extract imports from ${filePath}:`, error);
+		}
+	};
+
+	// Extract imports from index.ts
+	const indexPath = join(groupPath, "index.ts");
+	await extractImportsFromFile(indexPath);
+
+	// Extract imports from all subcommand files
+	for (const subcommand of subcommands) {
+		const subPath = join(groupPath, `${subcommand.data.name}.ts`);
+		await extractImportsFromFile(subPath);
+	}
+
+	// Extract imports from autocomplete.ts if it exists
+	if (autocompleteModule) {
+		const autocompletePath = join(groupPath, "autocomplete.ts");
+		await extractImportsFromFile(autocompletePath);
+	}
+
+	// Consolidate imports and format them
+	const consolidatedImports = new Set<string>();
+
+	// Process consolidated imports by module
+	for (const [module, importSet] of importsByModule) {
+		const imports = Array.from(importSet);
+
+		// Separate named imports, default imports, and namespace imports
+		const namedImports = imports.filter(
+			(imp: string) =>
+				imp.startsWith("{") ||
+				imp.includes(",") ||
+				!imp.match(/^[a-zA-Z_$]|^\* as/),
+		);
+		const defaultImports = imports.filter(
+			(imp: string) =>
+				!imp.startsWith("{") && !imp.startsWith("*") && !imp.includes(","),
+		);
+		const namespaceImports = imports.filter((imp: string) =>
+			imp.startsWith("* as"),
+		);
+
+		// Format the import statement
+		let importStatement = "import {";
+
+		const parts = [];
+
+		// Add type imports first
+		const typeImports = namedImports.filter((imp: string) =>
+			imp.includes("type"),
+		);
+		if (typeImports.length > 0) {
+			parts.push(
+				`type { ${typeImports.map((imp: string) => imp.replace(/^\s*type\s*\{?\s*|\s*\}?$/g, "")).join(", ")}`,
+			);
+		}
+
+		// Add named imports
+		const regularNamedImports = namedImports.filter(
+			(imp: string) => !imp.includes("type"),
+		);
+		if (regularNamedImports.length > 0) {
+			parts.push(
+				`{ ${regularNamedImports.map((imp: string) => imp.replace(/^\{?\s*|\s*\}?$/g, "")).join(", ")}`,
+			);
+		}
+
+		// Add default imports
+		if (defaultImports.length > 0) {
+			parts.push(defaultImports.join(", "));
+		}
+
+		// Add namespace imports
+		if (namespaceImports.length > 0) {
+			parts.push(namespaceImports.join(", "));
+		}
+
+		importStatement += parts.join(", ");
+		importStatement += `} from "${module}"`;
+
+		consolidatedImports.add(importStatement);
+	}
+
+	// Add side effect imports
+	for (const module of sideEffectImports) {
+		consolidatedImports.add(`import {"${module}"`);
+	}
+
+	return consolidatedImports;
+}
+
+/**
  * Generate option builder code for a Discord.js option
  */
-function generateOptionBuilder(option: any, indent: string): string {
+function generateOptionBuilder(
+	option: APIApplicationCommandOption,
+	indent: string,
+): string {
 	const optionType = option.type;
 	const optionName = option.name;
 	const optionDesc = option.description;
 	const required = option.required;
-	const autocomplete = option.autocomplete;
+
+	// Type guard function to check if option has autocomplete
+	const hasAutocomplete = (
+		opt: APIApplicationCommandOption,
+	): opt is APIApplicationCommandOption & { autocomplete?: boolean } => {
+		return "autocomplete" in opt;
+	};
+
+	const autocomplete = hasAutocomplete(option)
+		? option.autocomplete
+		: undefined;
 
 	// Map Discord.js option types to builder methods
 	const optionTypeMap: Record<number, string> = {
-		3: 'addStringOption',
-		4: 'addIntegerOption',
-		5: 'addBooleanOption',
-		6: 'addUserOption',
-		7: 'addChannelOption',
-		8: 'addRoleOption',
-		9: 'addMentionableOption',
-		10: 'addNumberOption',
-		11: 'addAttachmentOption'
+		3: "addStringOption",
+		4: "addIntegerOption",
+		5: "addBooleanOption",
+		6: "addUserOption",
+		7: "addChannelOption",
+		8: "addRoleOption",
+		9: "addMentionableOption",
+		10: "addNumberOption",
+		11: "addAttachmentOption",
 	};
 
-	const builderMethod = optionTypeMap[optionType] || 'addStringOption';
+	const builderMethod = optionTypeMap[optionType] || "addStringOption";
 
 	let builder = `\n${indent}.${builderMethod}(option =>
 ${indent}	option
@@ -320,8 +553,19 @@ ${indent}		.setDescription("${optionDesc}")`;
 		builder += `\n${indent}		.setAutocomplete(true)`;
 	}
 
+	// Type guard function to check if option has choices
+	const hasChoices = (
+		opt: APIApplicationCommandOption,
+	): opt is APIApplicationCommandOption & {
+		choices?: APIApplicationCommandOptionChoice[];
+	} => {
+		return (
+			"choices" in opt && Array.isArray((opt as { choices?: unknown }).choices)
+		);
+	};
+
 	// Add choices if they exist
-	if (option.choices && option.choices.length > 0) {
+	if (hasChoices(option) && option.choices && option.choices.length > 0) {
 		for (const choice of option.choices) {
 			builder += `\n${indent}		.addChoices(${JSON.stringify(choice)})`;
 		}
@@ -335,20 +579,21 @@ ${indent}		.setDescription("${optionDesc}")`;
 /**
  * Load all subcommands from a command directory
  */
-async function loadSubcommands(groupPath: string): Promise<any[]> {
-	const subcommands: any[] = [];
+async function loadSubcommands(groupPath: string): Promise<CommandModule[]> {
+	const subcommands: CommandModule[] = [];
 	const items = readdirSync(groupPath);
 
 	for (const item of items) {
 		const fullPath = join(groupPath, item);
 		const stats = statSync(fullPath);
 
-		if (stats.isFile() &&
+		if (
+			stats.isFile() &&
 			item.match(/\.(ts|js)$/) &&
-			item !== 'index.ts' &&
-			item !== 'autocomplete.ts' &&
-			!item.startsWith('sub-')) {
-
+			item !== "index.ts" &&
+			item !== "autocomplete.ts" &&
+			!item.startsWith("sub-")
+		) {
 			try {
 				const module = await import(`file://${fullPath}`);
 				const subcommand = module.default;
@@ -368,8 +613,10 @@ async function loadSubcommands(groupPath: string): Promise<any[]> {
 /**
  * Load autocomplete handler if it exists
  */
-async function loadAutocomplete(groupPath: string): Promise<any | null> {
-	const autocompletePath = join(groupPath, 'autocomplete.ts');
+async function loadAutocomplete(
+	groupPath: string,
+): Promise<((interaction: AutocompleteInteraction) => Promise<void>) | null> {
+	const autocompletePath = join(groupPath, "autocomplete.ts");
 
 	if (!existsSync(autocompletePath)) {
 		return null;
@@ -377,7 +624,9 @@ async function loadAutocomplete(groupPath: string): Promise<any | null> {
 
 	try {
 		const module = await import(`file://${autocompletePath}`);
-		return module.default;
+		return module.default as (
+			interaction: AutocompleteInteraction,
+		) => Promise<void>;
 	} catch (error) {
 		console.error(`❌ Failed to load autocomplete handler:`, error);
 		return null;
@@ -388,27 +637,28 @@ async function loadAutocomplete(groupPath: string): Promise<any | null> {
  * Read file content
  */
 async function readFileContent(filePath: string): Promise<string> {
-	const fs = await import('fs/promises');
-	return fs.readFile(filePath, 'utf-8');
+	const fs = await import("fs/promises");
+	return fs.readFile(filePath, "utf-8");
 }
 
 /**
  * Capitalize first letter of a string and convert hyphens to camelCase
  */
 function capitalize(str: string): string {
-	return str.replace(/-([a-z])/g, (match, letter) => letter.toUpperCase()).replace(/^./, letter => letter.toUpperCase());
+	return str
+		.replace(/-([a-z])/g, (match, letter) => letter.toUpperCase())
+		.replace(/^./, (letter) => letter.toUpperCase());
 }
-
 
 /**
  * Generate an index file for easy importing
  */
 async function generateIndexFile(outputDir: string, commands: string[]) {
 	const indexContent = `// Auto-generated command exports
-${commands.map(name => `export { default as ${name} } from './${name}.ts';`).join('\n')}
+${commands.map((name) => `export { default as ${name} } from './${name}.ts';`).join("\n")}
 `;
 
-	const indexPath = join(outputDir, 'index.ts');
+	const indexPath = join(outputDir, "index.ts");
 	writeFileSync(indexPath, indexContent);
 	console.log(`📄 Generated index file with ${commands.length} commands`);
 }
