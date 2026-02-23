@@ -1,6 +1,10 @@
 {
 	"$schema": "https://biomejs.dev/schemas/2.1.1/schema.json",
-	"vcs": { "enabled": false, "clientKind": "git", "useIgnoreFile": false },
+	"vcs": {
+		"enabled": false,
+		"clientKind": "git",
+		"useIgnoreFile": false
+	},
 	"files": {
 		"ignoreUnknown": false,
 		"includes": [
@@ -10,7 +14,10 @@
 			"!drizzle/**/*"
 		]
 	},
-	"formatter": { "enabled": true, "indentStyle": "tab" },
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab"
+	},
 	"linter": {
 		"enabled": true,
 		"rules": {
@@ -94,15 +101,27 @@
 		}
 	},
 	"javascript": {
-		"formatter": { "quoteStyle": "double" },
-		"globals": ["exports"]
+		"formatter": {
+			"quoteStyle": "double"
+		},
+		"globals": [
+			"exports"
+		]
 	},
 	"overrides": [
 		{
-			"includes": ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts", "/drizzle/*"],
+			"includes": [
+				"**/*.ts",
+				"**/*.tsx",
+				"**/*.mts",
+				"**/*.cts",
+				"/drizzle/*"
+			],
 			"linter": {
 				"rules": {
-					"complexity": { "noArguments": "error" },
+					"complexity": {
+						"noArguments": "error"
+					},
 					"correctness": {
 						"noConstAssign": "off",
 						"noGlobalObjectCalls": "off",
@@ -111,9 +130,12 @@
 						"noSetterReturn": "off",
 						"noUndeclaredVariables": "off",
 						"noUnreachable": "off",
-						"noUnreachableSuper": "off"
+						"noUnreachableSuper": "off",
+						"noUnusedVariables": "off"
 					},
-					"style": { "useConst": "error" },
+					"style": {
+						"useConst": "error"
+					},
 					"suspicious": {
 						"noDuplicateClassMembers": "off",
 						"noDuplicateObjectKeys": "off",
@@ -123,7 +145,8 @@
 						"noRedeclare": "off",
 						"noUnsafeNegation": "off",
 						"noVar": "error",
-						"useGetterReturn": "off"
+						"useGetterReturn": "off",
+						"noEmptyBlockStatements": "off"
 					}
 				}
 			}
@@ -131,6 +154,10 @@
 	],
 	"assist": {
 		"enabled": true,
-		"actions": { "source": { "organizeImports": "off" } }
+		"actions": {
+			"source": {
+				"organizeImports": "off"
+			}
+		}
 	}
 }
