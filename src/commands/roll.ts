@@ -7,22 +7,6 @@ import {
 	SlashCommandBuilder,
 } from "discord.js";
 
-type tokenTypes = "DICE" | "MODIFIER" | "OPERATOR" | "QUANTIFIER" | "NUMBER";
-interface Token {
-	type: tokenTypes;
-	value: string;
-}
-
-interface TokenOutput {
-	type: "NORMAL" | "ADVANTAGE" | "DISADVANTAGE";
-	opration: "+" | "-" | "*" | "/";
-	value: number[];
-}
-
-interface Results {
-	[key: string]: TokenOutput[];
-}
-
 export default {
 	data: new SlashCommandBuilder()
 		.setName("roll")
