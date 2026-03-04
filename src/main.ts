@@ -1,4 +1,8 @@
-import { InteractionContextType, Routes } from "discord-api-types/v10";
+import {
+	GatewayIntentBits,
+	Routes,
+	type Snowflake,
+} from "discord-api-types/v10";
 import {
 	Client,
 	Collection,
@@ -7,6 +11,7 @@ import {
 	REST,
 } from "discord.js";
 import { readdirSync } from "fs";
+import handleAutocomplete from "./commands/autocomplete.js";
 import { logger } from "./logger.js";
 
 /**
@@ -41,18 +46,20 @@ async function loadCommandsFromGenerated(): Promise<
 					logger.info(`Loaded command: ${command.data.name}`);
 				}
 			} catch (error) {
-				logger.error(`Failed to load command ${commandName}:`, error);
+				logger.error(`Failed to load command ${commandName}:`);
+				console.error(error);
 			}
 		}
 	} catch (error) {
 		logger.error(
-			"Failed to load generated commands. Make sure to run the build script first:",
+			"Failed to load commands. Make sure to run the build script first:",
 			error,
 		);
+
 		process.exit(1);
 	}
 
-	logger.info(`Loaded ${commands.size} commands from .jtnw folder`);
+	logger.info(`Loaded ${commands.size} commands from /src/commands folder`);
 	return commands;
 }
 
@@ -70,8 +77,11 @@ async function startBot() {
 			IntentsBitField.Flags.GuildMessages,
 			IntentsBitField.Flags.GuildVoiceStates,
 			IntentsBitField.Flags.MessageContent,
+			GatewayIntentBits.Guilds,
+			GatewayIntentBits.GuildMessages,
+			GatewayIntentBits.GuildVoiceStates,
 		],
-		presence: { status: "invisible" },
+		presence: { status: "online" },
 	});
 
 	logger.info("Discord client created, loading commands...");
@@ -99,11 +109,7 @@ async function startBot() {
 			),
 
 			rest.put(Routes.applicationCommands("1130242686142660618"), {
-				body: commandsJSON.filter(
-					(cmd) =>
-						cmd.contexts &&
-						InteractionContextType.PrivateChannel in cmd.contexts,
-				),
+				body: commandsJSON,
 			}),
 		]);
 
@@ -130,10 +136,17 @@ async function startBot() {
 		logger.info(`Logged in as ${c.user.tag}`);
 	});
 
+	/**
+	 * The ids of the users that can be recorded by the bot.
+	 */
+	const recordable = new Set<Snowflake>();
+
 	client.on("interactionCreate", async (interaction) => {
 		let command: Command | undefined;
-		if (interaction.isChatInputCommand() || interaction.isAutocomplete()) {
+		if (interaction.isChatInputCommand()) {
 			command = interaction.client.commands.get(interaction.commandName);
+		} else if (interaction.isAutocomplete()) {
+			await handleAutocomplete(interaction);
 		} else if (interaction.isButton()) {
 			if (interaction?.message?.interaction?.commandName === undefined) {
 				logger.error("Button interaction command name not found!");
@@ -149,7 +162,7 @@ async function startBot() {
 		try {
 			if (command) {
 				// All subcommand handling is now done within the command's execute function
-				await command.execute(interaction);
+				await command.execute(interaction, recordable);
 			}
 		} catch (error) {
 			logger.error(error);

@@ -36,10 +36,17 @@ export default {
 			rollSets.forEach((setStr, index) => {
 				if (!setStr.trim()) return;
 
-				const results = processRollSet(setStr);
+				const results = processRollSet(setStr.trim());
+				formattedResults +=
+					rollSets.length > 1 ? `**Set ${index + 1}**:\n` : "";
 				results.forEach((res) => {
-					formattedResults += `**Set ${index + 1}**: Roll: ${res.rollString} = **${res.total}**\n`;
+					formattedResults += rollSets.length > 1 ? "\t" : "";
+					formattedResults += `Roll: ${res.rollString} = **${res.total}**\n`;
 				});
+				const total = results.reduce((acc, val) => {
+					return acc + val.total;
+				}, 0);
+				formattedResults += `**Total: ${total}**\n\n`;
 			});
 
 			if (!formattedResults) {
@@ -60,7 +67,7 @@ export default {
 				error instanceof Error ? error.message : "An unknown error occurred.";
 			await interaction.reply({
 				content: `Error: ${errorMessage}`,
-				ephemeral: true,
+				flags: "Ephemeral",
 			});
 		}
 	},
@@ -70,16 +77,19 @@ function processRollSet(
 	expression: string,
 ): { rollString: string; total: number }[] {
 	// Matches '1d20', 'd6', '+', '-', '*', '/', or '5'
-	const tokens = expression.match(/(\d*d\d+)|([+\-*/])|(\d+)/g);
+	const tokens = expression.match(/(^\d+ )|(\d*d\d+)|([+\-*/])|(\d+)/g);
 	if (!tokens || tokens.length === 0) {
 		throw new Error(`Invalid dice expression: ${expression}`);
 	}
-
+	if (tokens.every((token) => /^\d+$/.test(token))) {
+		throw new Error(`Invalid dice expression: ${expression}`);
+	}
 	let quantity = 1;
-
+	console.log(expression);
+	console.log(tokens);
 	// FIX: If the first token is a pure number and there are subsequent tokens,
 	// treat it as the quantifier (e.g., "2 +d20+2" -> quantity: 2, remaining: "+d20+2")
-	if (/^\d+$/.test(tokens[0]!) && tokens.length > 1) {
+	if (/^\d+ $/.test(tokens[0]!) && tokens.length > 1) {
 		quantity = parseInt(tokens.shift()!, 10);
 	}
 
@@ -127,7 +137,7 @@ function evaluateTokens(tokens: string[]): {
 					const kept = rolls[0]!;
 					const dropped = rolls[1]!;
 					valueTotal = kept;
-					valueString = `[**${kept}**, ~~${dropped}~~]`;
+					valueString = `\`[${kept}, ${dropped}]\` ~~[${dropped}]~~`;
 				} else {
 					const rolls = rollDiceString(token);
 					valueTotal = rolls.reduce((a, b) => a + b, 0);
@@ -135,7 +145,7 @@ function evaluateTokens(tokens: string[]): {
 				}
 			} else if (/^\d+$/.test(token)) {
 				valueTotal = parseInt(token, 10);
-				valueString = `\`[${valueTotal}]\``;
+				valueString = `\`${valueTotal}\``;
 			} else {
 				throw new Error(
 					`Unexpected token: ${token}. Expected a number or dice.`,
@@ -146,10 +156,14 @@ function evaluateTokens(tokens: string[]): {
 			if (currentOp === "+") total += valueTotal;
 			else if (currentOp === "-") total -= valueTotal;
 			else if (currentOp === "*") total *= valueTotal;
-			else if (currentOp === "/") total /= valueTotal;
+			else if (currentOp === "/") {
+				if (valueTotal === 0)
+					throw new Error("Division by zero is not allowed!");
+				total /= valueTotal;
+			}
 
 			// Append to format string
-			if (rollString.length > 0) rollString += ` \`${currentOp}\` `;
+			if (rollString.length > 0) rollString += ` ${currentOp} `;
 			rollString += valueString;
 
 			expected = "OPERATOR";
@@ -173,7 +187,7 @@ function evaluateTokens(tokens: string[]): {
 }
 
 function roll(sides: number): number {
-	return Math.floor(Math.random() * sides) + 1;
+	return randomInt(1, sides + 1);
 }
 
 // Helper for multiple dice (e.g., "2d6")
@@ -181,17 +195,12 @@ function rollDiceString(diceStr: string): number[] {
 	const [countStr, sidesStr] = diceStr.split("d");
 	const count = countStr ? parseInt(countStr, 10) : 1;
 	const sides = parseInt(sidesStr!, 10);
+
+	if (count < 1) throw new Error("You can roll a minimum of 1 die at a time.");
+	if (count > 50)
+		throw new Error("You can roll a maximum of 50 dice at a time.");
+	if (sides < 2) throw new Error("The die must have at least 2 sides.");
+	if (sides > 1000) throw new Error("A die can have a maximum of 1000 sides.");
+
 	return Array.from({ length: count }, () => roll(sides));
-}
-
-function rollDice(diceExp: string): number[] {
-	const parts = diceExp.split("d");
-	const [amount, faces] =
-		parts[0] === "" ? [1, parts[1]] : [parts[0], parts[1]];
-	const results = [];
-	for (let i = 0; i < parseInt(amount as string, 10); i++) {
-		results.push(randomInt(1, parseInt(faces as string, 10) + 1));
-	}
-
-	return results;
 }

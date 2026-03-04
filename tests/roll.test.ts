@@ -63,7 +63,7 @@ describe("Roll Slash Command", () => {
 		const replyContent = replyMock.mock.calls[0]![0] as string;
 
 		// Ensures the output format combines both the dice roll and the static addition
-		expect(replyContent).toMatch(/`\[\d+, \d+\]` `\+` `\[4\]`/);
+		expect(replyContent).toMatch(/`\[\d+, \d+\]` \+ `4`/);
 	});
 
 	test("Correctly applies Advantage modifier formatting (+d20)", async () => {
@@ -73,7 +73,7 @@ describe("Roll Slash Command", () => {
 		const replyContent = replyMock.mock.calls[0]![0] as string;
 
 		// Advantage keeps the higher roll; format is [**kept**, ~~dropped~~]
-		expect(replyContent).toMatch(/\[\*\*\d+\*\*, ~~\d+~~\]/);
+		expect(replyContent).toMatch(/`\[\d+, \d+\]` ~~\[\d+\]~~/);
 	});
 
 	test("Correctly applies Disadvantage modifier formatting (-d20)", async () => {
@@ -83,7 +83,7 @@ describe("Roll Slash Command", () => {
 		const replyContent = replyMock.mock.calls[0]![0] as string;
 
 		// Disadvantage keeps the lower roll; format is [**kept**, ~~dropped~~]
-		expect(replyContent).toMatch(/\[\*\*\d+\*\*, ~~\d+~~\]/);
+		expect(replyContent).toMatch(/`\[\d+, \d+\]` ~~\[\d+\]~~/);
 	});
 
 	test("Uses the initial number as a quantity multiplier (e.g., 3 1d20)", async () => {
@@ -137,10 +137,10 @@ describe("Roll Slash Command", () => {
 			await rollCommand.execute(interaction);
 
 			// Typecast the error payload as an object
-			const replyContent = replyMock.mock.calls[0]![0] as { content: string; ephemeral: boolean };
+			const replyContent = replyMock.mock.calls[0]![0] as { flags: "Ephemeral"; content: string; };
 
 			expect(typeof replyContent).toBe("object");
-			expect(replyContent.ephemeral).toBe(true);
+			expect(replyContent.flags).toBe("Ephemeral");
 			expect(replyContent.content).toMatch(/Error: Invalid dice expression: invalid_gibberish/);
 		});
 
@@ -148,10 +148,12 @@ describe("Roll Slash Command", () => {
 			const { interaction, replyMock } = createMockInteraction("1d20+");
 			await rollCommand.execute(interaction);
 
-			const replyContent = replyMock.mock.calls[0]![0] as { content: string; ephemeral: boolean };
+			const replyContent = replyMock.mock.calls[0]![0] as {
+                flags: "Ephemeral"; content: string;
+};
 
 			expect(typeof replyContent).toBe("object");
-			expect(replyContent.ephemeral).toBe(true);
+			expect(replyContent.flags).toBe("Ephemeral");
 			expect(replyContent.content).toMatch(/Error: Expression ends abruptly with an operator./);
 		});
 	});

@@ -1,28 +1,10 @@
 import { db } from "@/db/index.js";
 import { campaigns, npcs } from "@/db/schema.js";
 import { logger } from "@/logger.js";
-import { BaseInteraction, EmbedBuilder, SlashCommandBuilder } from "discord.js";
+import { BaseInteraction, EmbedBuilder } from "discord.js";
 import { and, eq } from "drizzle-orm";
 
 export default {
-	data: new SlashCommandBuilder()
-		.setName("info")
-		.setDescription("Shows info about a NPC")
-		.addStringOption((option) =>
-			option
-				.setName("campaign")
-				.setDescription("The campaign to add the NPC to")
-				.setRequired(true)
-				.setAutocomplete(true),
-		)
-		.addStringOption((option) =>
-			option
-				.setName("name")
-				.setDescription("The name of the NPC")
-				.setRequired(true)
-				.setAutocomplete(true),
-		),
-
 	async execute(interaction: BaseInteraction) {
 		if (!interaction.isChatInputCommand()) return;
 
@@ -56,7 +38,7 @@ export default {
 				.where(
 					and(
 						eq(campaigns.id, parseInt(campaignName, 10)),
-						eq(campaigns.guildId, parseInt(guildId)),
+						eq(campaigns.guildId, parseInt(guildId, 10)),
 					),
 				)
 				.limit(1);

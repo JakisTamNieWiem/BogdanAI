@@ -7,6 +7,9 @@ declare module "discord.js" {
 
 	export interface Command {
 		data: SlashCommandBuilder;
-		execute: (interaction: BaseInteraction) => Promise<void>;
+		execute: (
+			interaction: BaseInteraction,
+			recordable?: Set<Snowflake>,
+		) => Promise<void>;
 	}
 }

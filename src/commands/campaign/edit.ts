@@ -3,7 +3,6 @@ import { campaigns } from "@/db/schema.js";
 import { logger } from "@/logger.js";
 import {
 	BaseInteraction,
-	EmbedBuilder,
 	LabelBuilder,
 	ModalBuilder,
 	TextInputStyle,
@@ -27,10 +26,24 @@ export default {
 		}
 
 		try {
+			const campaignId = parseInt(
+				interaction.options.getString("campaign", true),
+				10,
+			);
+			const [campaign] = await db
+				.select()
+				.from(campaigns)
+				.where(eq(campaigns.id, campaignId))
+				.limit(1);
+			console.log(campaign);
+			if (!campaign) {
+				interaction.reply("Campaign not found!");
+				return;
+			}
 			// Create and show modal
 			const modal = new ModalBuilder()
-				.setCustomId(`create-campaign-${guildId}`)
-				.setTitle("Create New Campaign");
+				.setCustomId(`edit-campaign-${guildId}`)
+				.setTitle("Edit Campaign");
 
 			// Add text input components
 			const nameInput = new LabelBuilder()
@@ -42,27 +55,30 @@ export default {
 						.setPlaceholder("Enter the campaign name")
 						.setRequired(true)
 						.setMinLength(3)
-						.setMaxLength(100),
+						.setMaxLength(100)
+						.setValue(campaign.name),
 				);
 
 			const descriptionInput = new LabelBuilder()
-				.setLabel("Description (optional)")
+				.setLabel("Description")
 				.setTextInputComponent((component) =>
 					component
 						.setCustomId("campaign-description")
 						.setStyle(TextInputStyle.Paragraph)
 						.setPlaceholder("Enter a brief description of your campaign")
 						.setRequired(false)
-						.setMaxLength(500),
+						.setMaxLength(500)
+						.setValue(campaign.description ?? ""),
 				);
 			const playersInput = new LabelBuilder()
-				.setLabel("Players (optional)")
+				.setLabel("Players")
 				.setUserSelectMenuComponent((component) =>
 					component
 						.setCustomId("campaign-players")
 						.setPlaceholder("Select players for your campaign")
 						.setRequired(false)
-						.setMaxValues(25),
+						.setMaxValues(25)
+						.setDefaultUsers(campaign.players),
 				);
 
 			modal.addLabelComponents(nameInput, descriptionInput, playersInput);
@@ -73,18 +89,22 @@ export default {
 			const submittedInteraction = await interaction.awaitModalSubmit({
 				filter: (modalInteraction) =>
 					modalInteraction.user.id === userId &&
-					modalInteraction.customId === `create-campaign-${guildId}`,
+					modalInteraction.customId === `edit-campaign-${guildId}`,
 				time: 60_000, // 60 seconds timeout
 			});
 
 			// Get modal data
+
 			const campaignName =
-				submittedInteraction.fields.getTextInputValue("campaign-name");
+				submittedInteraction.fields.getTextInputValue("campaign-name") ??
+				campaign.name;
 			const description =
-				submittedInteraction.fields.getTextInputValue("campaign-description") ||
-				"No description provided";
+				submittedInteraction.fields.getTextInputValue("campaign-description") ??
+				campaign.description;
 			const campaignPlayers =
-				submittedInteraction.fields.getSelectedUsers("campaign-players");
+				submittedInteraction.fields
+					.getSelectedUsers("campaign-players")
+					?.map((user) => user.id) ?? campaign.players;
 			// Validate campaign name
 			if (campaignName.length < 3 || campaignName.length > 24) {
 				await submittedInteraction.reply({
@@ -94,74 +114,37 @@ export default {
 				return;
 			}
 
-			// Check if campaign with this name already exists in this guild
-			const existingCampaign = await db
-				.select()
-				.from(campaigns)
-				.where(eq(campaigns.name, campaignName))
-				.limit(1);
-
-			if (existingCampaign.length > 0) {
-				await submittedInteraction.reply({
-					content: `A campaign named "${campaignName}" already exists in this server.`,
-					flags: "Ephemeral",
-				});
-				return;
-			}
-
-			// Create the new campaign
 			const [newCampaign] = await db
-				.insert(campaigns)
-				.values({
+				.update(campaigns)
+				.set({
 					name: campaignName,
 					description: description,
 					dm: userId,
-					players: campaignPlayers?.map((user) => user.id) ?? [],
+					players: campaignPlayers,
 					guildId: parseInt(guildId),
 				})
+				.where(eq(campaigns.id, campaignId))
 				.returning();
 
 			if (!newCampaign) {
 				await submittedInteraction.reply({
-					content:
-						"There was an error creating the campaign. Please try again.",
+					content: "There was an error editing the campaign. Please try again.",
 					flags: "Ephemeral",
 				});
 				return;
 			}
 
 			logger.info(
-				`User ${username} (${userId}) created campaign "${campaignName}"`,
+				`User ${username} (${userId}) edited campaign "${campaignName}"`,
 			);
 
-			const embed = new EmbedBuilder()
-				.setTitle("Campaign Created! 🎲")
-				.setDescription(`Successfully created campaign **${campaignName}**`)
-				.addFields(
-					{ name: "Campaign Name", value: campaignName, inline: true },
-					{ name: "DM", value: username, inline: true },
-					{
-						name: "ID",
-						value: newCampaign.id.toString(),
-						inline: true,
-					},
-					{ name: "Description", value: description, inline: false },
-					{
-						name: `Players (${newCampaign.players.length})`,
-						value:
-							newCampaign.players.map((id) => `<@${id}>`).join(", ") ??
-							"None yet. Use `/campaign add-player` to add players!",
-						inline: false,
-					},
-				)
-				.setColor("Green")
-				.setTimestamp()
-				.setFooter({ text: "Use /campaign help for more commands" });
-
-			await submittedInteraction.reply({ embeds: [embed] });
+			await submittedInteraction.reply({
+				content: "Changes to the campaing saved!",
+				flags: "Ephemeral",
+			});
 		} catch (error) {
 			console.log(error);
-			logger.error("Error creating campaign:", error);
+			logger.error("Error editing campaign:", error);
 
 			// Check if it's a timeout error
 			if (error.message?.includes("time")) {
@@ -171,14 +154,12 @@ export default {
 				});
 			} else if (interaction.replied || interaction.deferred) {
 				await interaction.followUp({
-					content:
-						"There was an error creating the campaign. Please try again.",
+					content: "There was an error editing the campaign. Please try again.",
 					flags: "Ephemeral",
 				});
 			} else {
 				await interaction.reply({
-					content:
-						"There was an error creating the campaign. Please try again.",
+					content: "There was an error editing the campaign. Please try again.",
 					flags: "Ephemeral",
 				});
 			}

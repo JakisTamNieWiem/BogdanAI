@@ -6,30 +6,11 @@ import {
 	EmbedBuilder,
 	LabelBuilder,
 	ModalBuilder,
-	SlashCommandBuilder,
 	TextInputStyle,
 } from "discord.js";
 import { and, eq } from "drizzle-orm";
 
 export default {
-	data: new SlashCommandBuilder()
-		.setName("edit")
-		.setDescription("Add a new NPC")
-		.addStringOption((option) =>
-			option
-				.setName("campaign")
-				.setDescription("The campaign from which the NPC will be edited")
-				.setRequired(true)
-				.setAutocomplete(true),
-		)
-		.addStringOption((option) =>
-			option
-				.setName("name")
-				.setDescription("The name of the npc to edit")
-				.setRequired(true)
-				.setAutocomplete(true),
-		),
-
 	async execute(interaction: BaseInteraction) {
 		if (!interaction.isChatInputCommand()) return;
 		const campaignName = interaction.options.getString("campaign", true);

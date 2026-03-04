@@ -1,21 +1,10 @@
 import { db } from "@/db/index.js";
 import { campaigns, npcs } from "@/db/schema.js";
 import { logger } from "@/logger.js";
-import { BaseInteraction, EmbedBuilder, SlashCommandBuilder } from "discord.js";
+import { BaseInteraction, EmbedBuilder } from "discord.js";
 import { and, eq } from "drizzle-orm";
 
 export default {
-	data: new SlashCommandBuilder()
-		.setName("list")
-		.setDescription("List all NPCs in a campaign")
-		.addStringOption((option) =>
-			option
-				.setName("campaign")
-				.setDescription("The campaign to list NPCs from")
-				.setRequired(true)
-				.setAutocomplete(true),
-		),
-
 	async execute(interaction: BaseInteraction) {
 		if (!interaction.isChatInputCommand()) return;
 

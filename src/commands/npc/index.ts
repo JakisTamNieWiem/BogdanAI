@@ -1,6 +1,5 @@
 import { logger } from "@/logger.js";
 import { BaseInteraction, SlashCommandBuilder } from "discord.js";
-import handleAutocomplete from "./autocomplete.ts";
 
 export default {
 	data: new SlashCommandBuilder()
@@ -103,10 +102,6 @@ export default {
 					await (await import("./edit.ts")).default.execute(interaction);
 					break;
 				}
-				case "remove": {
-					await (await import("./remove.ts")).default.execute(interaction);
-					break;
-				}
 				case "list": {
 					await (await import("./list.ts")).default.execute(interaction);
 					break;
@@ -118,11 +113,9 @@ export default {
 				default:
 					await interaction.reply({
 						content: "Unknown subcommand",
-						ephemeral: true,
+						flags: "Ephemeral",
 					});
 			}
-		} else if (interaction.isAutocomplete()) {
-			await handleAutocomplete(interaction);
 		}
 	},
 };

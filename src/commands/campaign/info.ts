@@ -1,79 +1,66 @@
 import { db } from "@/db/index.js";
 import { campaigns } from "@/db/schema.js";
 import { logger } from "@/logger.js";
-import { BaseInteraction, EmbedBuilder, SlashCommandBuilder } from "discord.js";
+import { BaseInteraction, EmbedBuilder } from "discord.js";
 import { eq } from "drizzle-orm";
 
 export default {
-	data: new SlashCommandBuilder()
-		.setName("info")
-		.setDescription("View information about a campaign")
-		.addStringOption((option) =>
-			option
-				.setName("name")
-				.setDescription("The name of the campaign")
-				.setRequired(true)
-				.setAutocomplete(true),
-		),
-
 	async execute(interaction: BaseInteraction) {
 		if (!interaction.isChatInputCommand()) return;
 
-		const campaignName = interaction.options.getString("name", true);
+		const guildId = interaction.guild?.id;
+
+		if (!guildId) {
+			await interaction.reply({
+				content: "This command can only be used in a server.",
+				flags: "Ephemeral",
+			});
+			return;
+		}
 
 		try {
+			const campaignId = parseInt(
+				interaction.options.getString("campaign", true),
+				10,
+			);
 			// Find the campaign
 			const [campaign] = await db
 				.select()
 				.from(campaigns)
-				.where(eq(campaigns.name, campaignName))
+				.where(eq(campaigns.id, campaignId))
 				.limit(1);
 
 			if (!campaign) {
 				await interaction.reply({
-					content: `Campaign "${campaignName}" not found.`,
+					content: `Campaign not found.`,
 					flags: "Ephemeral",
 				});
 				return;
 			}
 
-			const playerIds = campaign.players as string[];
+			const playerIds = campaign.players;
 			const playersText =
 				playerIds.length > 0
 					? playerIds.map((id) => `<@${id}>`).join(", ")
 					: "No players yet";
 
 			// Try to fetch DM's username from Discord
-			let dmDisplay = `<@${campaign.dm}>`;
-			try {
-				const dmUser = await interaction.client.users.fetch(campaign.dm);
-				if (dmUser) {
-					dmDisplay = `${dmUser.tag}`;
-				}
-			} catch (error) {
-				logger.warn(`Could not fetch DM user ${campaign.dm}:`, error);
-			}
 
 			const embed = new EmbedBuilder()
-				.setTitle(`📋 ${campaign.name}`)
-				.setDescription("Campaign Information")
+				.setTitle(`Campaign: ${campaign.name}`)
 				.addFields(
-					{ name: "Campaign ID", value: campaign.id.toString(), inline: true },
-					{ name: "Dungeon Master", value: dmDisplay, inline: true },
+					{ name: "ID", value: campaign.id.toString(), inline: true },
+					{ name: "DM", value: `<@${campaign.dm}>`, inline: true },
 					{
 						name: "Description",
-						value: campaign.description || "No description",
+						value: campaign.description ?? "No description",
 						inline: false,
 					},
-
 					{
-						name: "Player Count",
-						value: playerIds.length.toString(),
-						inline: true,
-					},
-					{
-						name: "Players",
-						value: playersText || "No players",
+						name: `Players (${campaign.players.length})`,
+						value:
+							campaign.players.map((id) => `<@${id}>`).join(", ") ??
+							"No players",
 						inline: false,
 					},
 					{
