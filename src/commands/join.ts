@@ -1,6 +1,10 @@
 // join.ts
 import { logger } from "@/logger.js";
-import { createListeningStream } from "@/utils/createListeningStream";
+import {
+	activeRecordings,
+	createListeningStream,
+	killAllFfmpeg,
+} from "@/utils/createListeningStream";
 import {
 	entersState,
 	getVoiceConnection,
@@ -46,6 +50,13 @@ export default {
 					selfMute: true,
 				});
 			}
+			// Inside your execute function after creating the connection:
+			connection.on(VoiceConnectionStatus.Disconnected, () => {
+				console.log("Bot disconnected! Clearing all recording locks...");
+				// If you export activeRecordings from createListeningStream, you can clear it here:
+				activeRecordings.clear();
+				killAllFfmpeg();
+			});
 
 			try {
 				await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
