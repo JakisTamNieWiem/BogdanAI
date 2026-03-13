@@ -182,19 +182,15 @@ export async function createListeningStream(
 	let isDestroyed = false;
 	const ffmpeg = spawn("ffmpeg", [
 		"-f",
-		"ogg", // FFmpeg reads the multiplexed Ogg stream
+		"ogg", // Input is the multiplexed Ogg stream
 		"-i",
 		"pipe:0", // Read from stdin
-		"-ar",
-		"48000", // Output Sample Rate: 48 kHz
-		"-ac",
-		"2", // Output Channels: Stereo
 		"-c:a",
-		"libmp3lame", // MP3 Encoder
+		"libopus", // Audio codec: Opus (high compression, small file)
 		"-b:a",
-		"128k", // 128 kbps (excellent for voice)
+		"64k", // 64kbps is perfect for Ogg/Opus voice (very small)
 		"-f",
-		"mp3", // Output format: MP3
+		"ogg", // Output format: Ogg container
 		"-y", // Overwrite
 		filePath,
 	]);

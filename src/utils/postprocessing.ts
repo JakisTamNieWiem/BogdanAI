@@ -25,12 +25,7 @@ interface DialogueLine {
 }
 
 export async function mergeAndCorrect(dateFolder: string) {
-	const folderPath = path.join(
-		process.cwd(),
-		"recordings",
-		dateFolder,
-		"Transcriptions",
-	);
+	const folderPath = path.join(process.cwd(), "transcriptions", dateFolder);
 	const files = fs.readdirSync(folderPath).filter((f) => f.endsWith(".json"));
 
 	if (files.length === 0) return console.log("No Whisper JSON files found.");
