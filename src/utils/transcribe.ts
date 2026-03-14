@@ -1,19 +1,17 @@
 import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
-const WHISPER_MODEL =
-	"C:\\Users\\noleo\\Desktop\\AI\\models\\ggml-large-v3-turbo.bin";
 
 const MAX_CONCURRENT_WHISPERS = 3;
 // Helper function to run Whisper as a Promise
 function runWhisperCommand(
-	folderPath: string,
+	folderDate: string,
 	filePath: string,
 ): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const whisper = spawn("whisper-cli", [
 			"-m",
-			WHISPER_MODEL, // The model file
+			process.env.WHISPER_MODEL!, // The model file
 			"-f",
 			filePath, // The target audio file
 			"-oj", // Output JSON format (creates filePath.json)
@@ -26,7 +24,12 @@ function runWhisperCommand(
 			"8",
 			"-nt",
 			"-of",
-			path.join(folderPath, "Transcriptions", path.basename(filePath)),
+			path.join(
+				process.cwd(),
+				"transcriptions",
+				folderDate,
+				path.basename(filePath),
+			),
 		]);
 
 		// Optional: if you want to see Whisper's internal logs, uncomment these
@@ -70,7 +73,7 @@ export async function transcribeSession(dateFolder: string) {
 	console.log(`Scanning folder: ${folderPath}`);
 	const files = fs
 		.readdirSync(folderPath)
-		.filter((file) => file.endsWith(".mp3"))
+		.filter((file) => file.endsWith(".ogg"))
 		.sort(); // Sorts chronologically based on our HHMMSS filename format
 
 	if (files.length === 0) {
@@ -79,8 +82,8 @@ export async function transcribeSession(dateFolder: string) {
 	}
 
 	console.log(`Found ${files.length} audio clips.`, files);
-	if (!fs.existsSync(path.join(folderPath, "Transcriptions"))) {
-		fs.mkdirSync(path.join(folderPath, "Transcriptions"));
+	if (!fs.existsSync(path.join(process.cwd(), "transcriptions", dateFolder))) {
+		fs.mkdirSync(path.join(process.cwd(), "transcriptions", dateFolder));
 	}
 	console.log(
 		`Starting ${MAX_CONCURRENT_WHISPERS} concurrent Whisper workers...\n`,
@@ -115,7 +118,7 @@ export async function transcribeSession(dateFolder: string) {
 		// Create the async task
 		const task = async () => {
 			try {
-				await runWhisperCommand(folderPath, filePath);
+				await runWhisperCommand(dateFolder, filePath);
 				processedCount++;
 			} catch (error) {
 				failedCount++;
