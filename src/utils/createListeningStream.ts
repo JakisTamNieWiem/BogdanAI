@@ -176,7 +176,7 @@ export async function createListeningStream(
 
 	if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
 
-	const fileName = `${now.getTime()}-${user.id}.mp3`;
+	const fileName = `${now.getTime()}-${user.id}.ogg`;
 	const filePath = path.join(folderPath, fileName);
 
 	let isDestroyed = false;

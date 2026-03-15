@@ -73,7 +73,7 @@ export async function transcribeSession(dateFolder: string) {
 	console.log(`Scanning folder: ${folderPath}`);
 	const files = fs
 		.readdirSync(folderPath)
-		.filter((file) => file.endsWith(".ogg"))
+		.filter((file) => file.endsWith(".mp3"))
 		.sort(); // Sorts chronologically based on our HHMMSS filename format
 
 	if (files.length === 0) {
@@ -122,7 +122,7 @@ export async function transcribeSession(dateFolder: string) {
 				processedCount++;
 			} catch (error) {
 				failedCount++;
-				console.error(`❌ Failed ${file}:`, error);
+				//console.error(`❌ Failed ${file}:`, error);
 			} finally {
 				updateProgress();
 			}
