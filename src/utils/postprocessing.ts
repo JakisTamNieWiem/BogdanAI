@@ -85,6 +85,11 @@ export async function mergeAndCorrect(dateFolder: string) {
 	);
 	console.log("✅ Raw timeline merged and saved!");
 	const rawTranscriptNoTimestamps = rawTranscript.replace(/^\[.*\] /gm, "");
+	fs.writeFileSync(
+		path.join(folderPath, "Raw_Whisper_Transcript.txt"),
+		rawTranscriptNoTimestamps,
+	);
+	return;
 	// 3. Send the raw text to Gemini for Correction & OOC Tagging
 	// We can use Gemini 1.5 Flash here because text processing is very easy for it
 	console.log("🧠 Sending raw text to Gemini for summary");
@@ -94,7 +99,8 @@ export async function mergeAndCorrect(dateFolder: string) {
 
 	const prompt = `
 You are an expert fantasy storyteller, a D&D chronicler, and a master archivist. 
-Below is a full transcript of our latest Dungeons & Dragons session. The transcript contains both in-character roleplay and [OOC] (Out-Of-Character) table talk.
+Below is a full transcript of our latest Dungeons & Dragons session set in modern world inspired by Jujutsu Kaisen. 
+The transcript contains both in-character roleplay and [OOC] (Out-Of-Character) table talk.
 
 Your task is to read the transcript and write a comprehensive, engaging, and epic recap of the session. 
 
@@ -103,24 +109,6 @@ CRITICAL INSTRUCTIONS:
 2. Focus heavily on the narrative progression, the decisions the players made, and the consequences.
 3. Distinguish between what happened in the game world and the players' jokes, but embrace the fun tone of the table.
 4. The output MUST be written entirely in Polish.
-5. Format the output using strict Markdown.
-
-STRUCTURE THE SUMMARY EXACTLY LIKE THIS:
-
-# 📜[Generate a title for the Session]
-
-## 📖 Streszczenie Wydarzeń (Story Recap)
-Write a cohesive, chronological summary of the session's plot. Divide it into 2-3 short paragraphs. What was the main objective? Where did the party go? What major choices did they make?
-
-## 🎭 Bohaterowie Niezależni (Key NPCs)
-List the most important NPCs the party interacted with during this session and briefly describe their attitude towards the party or what information they provided.
-* **[NPC Name]:**[Brief description of the interaction]
-
-## ⚔️ Walka i Wyzwania (Combat & Challenges)
-Describe any major battles, puzzles, or challenges. Mention who landed the killing blow, any critical successes, terrible failures, or clever/stupid ideas the players used to survive.
-
-## 💎 Łupy i Odkrycia (Loot & Discoveries)
-List any important items, gold, artifacts, or plot-critical clues the party found. (If none, skip this section).
 
 ========================================
 RAW TRANSCRIPT:
