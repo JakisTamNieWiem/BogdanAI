@@ -121,12 +121,6 @@ Manage campaign quests:
 - Quest status management
 - Campaign organization
 
-### /tarot - Tarot Readings
-Generate mystical tarot readings:
-- Random card draws
-- Interpretations for RPG sessions
-- Atmospheric storytelling elements
-
 ### /petarda - Special Command
 Unique custom command for special effects.
 
