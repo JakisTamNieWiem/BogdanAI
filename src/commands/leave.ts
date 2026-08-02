@@ -1,11 +1,12 @@
 import { logger } from "@/logger.js";
+import type { BotRuntimeState } from "@/recording/types.js";
+import { finalizeRecordingSession } from "@/utils/sessionPipeline.js";
 import { getVoiceConnection } from "@discordjs/voice";
 import {
 	ApplicationIntegrationType,
 	ChatInputCommandInteraction,
 	InteractionContextType,
 	SlashCommandBuilder,
-	type Snowflake,
 } from "discord.js";
 
 export default {
@@ -16,12 +17,13 @@ export default {
 		.setIntegrationTypes([ApplicationIntegrationType.GuildInstall]),
 	async execute(
 		interaction: ChatInputCommandInteraction<"cached">,
-		recordable: Set<Snowflake>,
+		runtime: BotRuntimeState,
 	) {
 		if (interaction.isChatInputCommand()) {
 			logger.info(`Command ${interaction.commandName} executed`);
 			const connection = getVoiceConnection(interaction.guildId);
-			if (!connection) {
+			const activeSession = runtime.activeSessions.get(interaction.guildId);
+			if (!connection && !activeSession) {
 				await interaction.reply({
 					content: "Not in a voice channel in this server!",
 					flags: "Ephemeral",
@@ -29,16 +31,35 @@ export default {
 				return;
 			}
 			try {
-				connection.destroy();
-
-				recordable.clear();
+				if (connection) {
+					logger.info(
+						{
+							guildId: interaction.guildId,
+						},
+						"Destroying voice connection after leave command.",
+					);
+					connection.destroy();
+				}
+				const finalizedSession = await finalizeRecordingSession(
+					interaction.guildId,
+					runtime,
+				);
+				runtime.triggerTranscriptionWorker();
 
 				await interaction.reply({
-					content: "Left the channel!",
+					content: finalizedSession
+						? `Left the channel and finalized session \`${finalizedSession.sessionKey}\`.`
+						: "Left the channel!",
 					flags: "Ephemeral",
 				});
 			} catch (error) {
-				console.warn(error);
+				logger.error(
+					{
+						err: error,
+						guildId: interaction.guildId,
+					},
+					"Leave command failed.",
+				);
 				const errorMessage =
 					error instanceof Error ? error.message : "An unknown error occurred.";
 				await interaction.reply({

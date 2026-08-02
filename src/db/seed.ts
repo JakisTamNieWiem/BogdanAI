@@ -5,8 +5,8 @@ import { LoremIpsum } from "lorem-ipsum";
 import { parseArgs } from "node:util";
 
 // Adjust the path to your Drizzle schema file
-import spells from "@data/spells.json" with { type: "json" };
-import wikidot_spells from "@data/wikidot-spells.json" with { type: "json" };
+import spells from "@data/spells.json";
+import wikidot_spells from "@data/wikidot-spells.json";
 import * as schema from "./schema";
 
 // --- Database Setup ---
@@ -131,7 +131,7 @@ async function seed_campaign() {
 			name: "Test Campaign",
 			dm: "The DM",
 			players: ["player_one", "player_two"],
-			guildId: 0,
+			guildId: "0",
 		})
 		.onConflictDoNothing();
 	console.log("Seeded campaign with ID 1.");

@@ -1,8 +1,6 @@
-import {
-	GatewayIntentBits,
-	Routes,
-	type Snowflake,
-} from "discord-api-types/v10";
+import type { BotRuntimeState } from "@/recording/types.js";
+import { startTranscriptionWorker } from "@/utils/sessionPipeline.js";
+import { GatewayIntentBits, Routes } from "discord-api-types/v10";
 import {
 	Client,
 	Collection,
@@ -46,14 +44,19 @@ async function loadCommandsFromGenerated(): Promise<
 					logger.info(`Loaded command: ${command.data.name}`);
 				}
 			} catch (error) {
-				logger.error(`Failed to load command ${commandName}:`);
-				console.error(error);
+				logger.error(
+					{
+						err: error,
+						commandName,
+					},
+					"Failed to load command.",
+				);
 			}
 		}
 	} catch (error) {
 		logger.error(
+			{ err: error },
 			"Failed to load commands. Make sure to run the build script first:",
-			error,
 		);
 
 		process.exit(1);
@@ -128,18 +131,19 @@ async function startBot() {
 			`Loaded commands: ${client.commands.map((elem) => elem.data.name)}`,
 		);
 	} catch (error) {
-		logger.error("Failed to register commands:", error);
+		logger.error({ err: error }, "Failed to register commands.");
 	}
+
+	const runtime: BotRuntimeState = {
+		activeSessions: new Map(),
+		triggerTranscriptionWorker: () => {},
+	};
+	runtime.triggerTranscriptionWorker = startTranscriptionWorker(client);
 
 	logger.info("Setting up event handlers...");
 	client.on("clientReady", (c) => {
 		logger.info(`Logged in as ${c.user.tag}`);
 	});
-
-	/**
-	 * The ids of the users that can be recorded by the bot.
-	 */
-	const recordable = new Set<Snowflake>();
 
 	client.on("interactionCreate", async (interaction) => {
 		let command: Command | undefined;
@@ -162,10 +166,17 @@ async function startBot() {
 		try {
 			if (command) {
 				// All subcommand handling is now done within the command's execute function
-				await command.execute(interaction, recordable);
+				await command.execute(interaction, runtime);
 			}
 		} catch (error) {
-			logger.error(error);
+			logger.error(
+				{
+					err: error,
+					interactionType: interaction.type,
+					commandName: command?.data.name,
+				},
+				"Interaction handler failed.",
+			);
 			if (interaction.isChatInputCommand()) {
 				if (interaction.replied || interaction.deferred) {
 					await interaction.followUp({
@@ -196,4 +207,7 @@ async function startBot() {
 }
 
 // Start the bot
-startBot().catch(console.error);
+startBot().catch((error) => {
+	logger.fatal({ err: error }, "Bot startup failed.");
+	process.exit(1);
+});

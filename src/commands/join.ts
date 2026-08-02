@@ -1,10 +1,7 @@
 // join.ts
 import { logger } from "@/logger.js";
-import {
-	activeRecordings,
-	createListeningStream,
-	killAllFfmpeg,
-} from "@/utils/createListeningStream";
+import { attachVoiceSessionHooks } from "@/utils/sessionPipeline.js";
+import type { BotRuntimeState } from "@/recording/types.js";
 import {
 	entersState,
 	getVoiceConnection,
@@ -16,7 +13,6 @@ import {
 	ChatInputCommandInteraction,
 	InteractionContextType,
 	SlashCommandBuilder,
-	type Snowflake,
 } from "discord.js";
 
 export default {
@@ -27,7 +23,7 @@ export default {
 		.setIntegrationTypes([ApplicationIntegrationType.GuildInstall]),
 	async execute(
 		interaction: ChatInputCommandInteraction<"cached">,
-		recordable: Set<Snowflake>,
+		runtime: BotRuntimeState,
 	) {
 		if (interaction.isChatInputCommand()) {
 			logger.info(`Command ${interaction.commandName} executed`);
@@ -50,28 +46,15 @@ export default {
 					selfMute: true,
 				});
 			}
-			// Inside your execute function after creating the connection:
-			connection.on(VoiceConnectionStatus.Disconnected, () => {
-				console.log("Bot disconnected! Clearing all recording locks...");
-				// If you export activeRecordings from createListeningStream, you can clear it here:
-				activeRecordings.clear();
-				killAllFfmpeg();
-			});
 
 			try {
 				await entersState(connection, VoiceConnectionStatus.Ready, 20_000);
-				const receiver = connection.receiver;
-
-				// Prevent attaching multiple listeners if /join is run more than once
-				if (receiver.speaking.listenerCount("start") === 0) {
-					receiver.speaking.on("start", async (userId) => {
-						// Check if THIS GUILD is flagged for recording
-						if (recordable.has(interaction.guildId)) {
-							const user = await interaction.client.users.fetch(userId);
-							createListeningStream(receiver, user);
-						}
-					});
-				}
+				attachVoiceSessionHooks(
+					connection,
+					interaction.client,
+					interaction.guildId,
+					runtime,
+				);
 
 				await interaction.followUp({ content: "Ready!", flags: "Ephemeral" });
 			} catch (error) {

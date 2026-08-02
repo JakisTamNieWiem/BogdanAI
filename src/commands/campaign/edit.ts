@@ -121,7 +121,7 @@ export default {
 					description: description,
 					dm: userId,
 					players: campaignPlayers,
-					guildId: parseInt(guildId),
+					guildId,
 				})
 				.where(eq(campaigns.id, campaignId))
 				.returning();

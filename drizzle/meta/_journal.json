@@ -5,57 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1758741892735,
-      "tag": "0000_flaky_dakota_north",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1760479518921,
-      "tag": "0001_lame_energizer",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1760479556349,
-      "tag": "0002_marvelous_wolfpack",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1760479564738,
-      "tag": "0003_warm_mentor",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1760479623308,
-      "tag": "0004_complex_wasp",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1760479677887,
-      "tag": "0005_secret_amphibian",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1760483095079,
-      "tag": "0006_slim_meteorite",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1760484089695,
-      "tag": "0007_late_lyja",
+      "when": 1776453674472,
+      "tag": "0000_mute_sentry",
       "breakpoints": true
     }
   ]

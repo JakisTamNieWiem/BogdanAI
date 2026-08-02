@@ -1,3 +1,4 @@
+import type { BotRuntimeState } from "@/recording/types.js";
 import { Collection, SlashCommandBuilder } from "discord.js";
 
 declare module "discord.js" {
@@ -9,7 +10,7 @@ declare module "discord.js" {
 		data: SlashCommandBuilder;
 		execute: (
 			interaction: BaseInteraction,
-			recordable?: Set<Snowflake>,
+			runtime?: BotRuntimeState,
 		) => Promise<void>;
 	}
 }

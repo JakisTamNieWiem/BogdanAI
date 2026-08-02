@@ -28,7 +28,7 @@ export default {
 				.where(
 					and(
 						eq(campaigns.name, campaignName),
-						eq(campaigns.guildId, parseInt(guildId)),
+						eq(campaigns.guildId, guildId),
 					),
 				)
 				.limit(1);

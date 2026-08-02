@@ -30,7 +30,7 @@ export default async function handleAutocomplete(interaction: BaseInteraction) {
 				.where(
 					and(
 						like(campaigns.name, `%${campaignName}%`),
-						eq(campaigns.guildId, parseInt(guildId)),
+						eq(campaigns.guildId, guildId),
 					),
 				)
 				.limit(25);
@@ -55,7 +55,7 @@ export default async function handleAutocomplete(interaction: BaseInteraction) {
 				.where(
 					and(
 						eq(campaigns.id, parseInt(campaignValue, 10)),
-						eq(campaigns.guildId, parseInt(guildId)),
+						eq(campaigns.guildId, guildId),
 					),
 				)
 				.limit(1);

@@ -52,7 +52,7 @@ export const campaigns = sqliteTable("Campaign", {
 	description: text("description"),
 	dm: text("dm").notNull(), // Discord user ID of the DM
 	players: text("players", { mode: "json" }).$type<string[]>().notNull(), // Array of Discord user IDs
-	guildId: integer("guildId").notNull(), // Discord guild ID
+	guildId: text("guildId").notNull(), // Discord guild ID
 });
 
 export const npcs = sqliteTable(
@@ -147,3 +147,86 @@ export const npcRelations = relations(npcs, ({ one, many }) => ({
 	}),
 	quests: many(quests),
 }));
+
+export const transcriptionQueue = sqliteTable(
+	"TranscriptionQueue",
+	{
+		id: integer("id").primaryKey({ autoIncrement: true }),
+		sessionId: integer("sessionId")
+			.notNull()
+			.references(() => sessions.id, {
+				onDelete: "cascade",
+			}),
+
+		// Access Control & Linking
+		campaignId: integer("campaignId").references(() => campaigns.id, {
+			onDelete: "cascade",
+		}), // Optional: Can be null if recording outside a campaign
+		guildId: text("guildId").notNull(), // Discord Server ID
+		userId: text("userId").notNull(), // Discord User ID of who spoke
+
+		// File Tracking
+		audioFilePath: text("audioFilePath").notNull(), // e.g., "sessions/<session>/audio/000001-1774724301684-298520910430863363.wav"
+		sequence: integer("sequence").notNull(),
+
+		// State Machine for the Queue
+		status: text("status", {
+			enum: ["pending", "processing", "completed", "failed"],
+		})
+			.default("pending")
+			.notNull(),
+
+		// Results
+		rawText: text("rawText"), // The raw Whisper output
+		correctedText: text("correctedText"), // The final Qwen corrected output
+		attemptCount: integer("attemptCount").default(0).notNull(),
+		lastError: text("lastError"),
+
+		// Time Tracking for Queue Ordering
+		createdAt: integer("createdAt", { mode: "timestamp" })
+			.$defaultFn(() => new Date())
+			.notNull(),
+		startedAt: integer("startedAt", { mode: "timestamp" }),
+		finishedAt: integer("finishedAt", { mode: "timestamp" }),
+		postedAt: integer("postedAt", { mode: "timestamp" }),
+	},
+	(table) => [
+		uniqueIndex("TranscriptionQueue_audioFilePath_unique").on(
+			table.audioFilePath,
+		),
+	],
+);
+export const sessions = sqliteTable("Session", {
+	id: integer("id").primaryKey({ autoIncrement: true }),
+	sessionKey: text("sessionKey").unique().notNull(), // e.g., "2026-04-15_20-13-05_547182730656481280"
+	campaignId: integer("campaignId").references(() => campaigns.id),
+	guildId: text("guildId").notNull(),
+	voiceChannelId: text("voiceChannelId").notNull(),
+	transcriptionChannelId: text("transcriptionChannelId"),
+	liveTranscription: integer("liveTranscription", { mode: "boolean" })
+		.default(false)
+		.notNull(),
+	postTranscripts: integer("postTranscripts", { mode: "boolean" })
+		.default(false)
+		.notNull(),
+	status: text("status", {
+		enum: [
+			"recording",
+			"queued",
+			"transcribing",
+			"transcribed",
+			"summarizing",
+			"completed",
+			"failed",
+		],
+	})
+		.default("recording")
+		.notNull(),
+	startedAt: integer("startedAt", { mode: "timestamp" })
+		.$defaultFn(() => new Date())
+		.notNull(),
+	endedAt: integer("endedAt", { mode: "timestamp" }),
+	lastError: text("lastError"),
+	fullRawTimeline: text("fullRawTimeline"), // The merged text from Whisper
+	fullCorrectedTimeline: text("fullCorrectedTimeline"), // The final LLM output
+});

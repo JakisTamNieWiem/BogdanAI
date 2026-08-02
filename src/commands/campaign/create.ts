@@ -117,7 +117,7 @@ export default {
 					description: description,
 					dm: userId,
 					players: campaignPlayers?.map((user) => user.id) ?? [],
-					guildId: parseInt(guildId),
+					guildId,
 				})
 				.returning();
 

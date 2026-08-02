@@ -1,53 +1,73 @@
-import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 
 const MAX_CONCURRENT_WHISPERS = 3;
-// Helper function to run Whisper as a Promise
-function runWhisperCommand(
+const MIN_AUDIO_FILE_SIZE_BYTES = 8000;
+
+type WhisperSegment = {
+	text?: string;
+	start?: number;
+	end?: number;
+};
+
+function buildArchivePayload(responseData: {
+	text?: unknown;
+	language?: unknown;
+	segments?: WhisperSegment[];
+}) {
+	const segments = Array.isArray(responseData.segments)
+		? responseData.segments
+		: [];
+
+	return {
+		text: typeof responseData.text === "string" ? responseData.text : "",
+		language:
+			typeof responseData.language === "string" ? responseData.language : "pl",
+		segments,
+		transcription: segments.map((segment) => ({
+			text: segment.text ?? "",
+			offsets: {
+				from: Math.round((segment.start ?? 0) * 1000),
+				to: Math.round((segment.end ?? segment.start ?? 0) * 1000),
+			},
+		})),
+	};
+}
+
+async function runWhisperCommand(
 	folderDate: string,
 	filePath: string,
 ): Promise<void> {
-	return new Promise((resolve, reject) => {
-		const whisper = spawn("whisper-cli", [
-			"-m",
-			process.env.WHISPER_MODEL!, // The model file
-			"-f",
-			filePath, // The target audio file
-			"-oj", // Output JSON format (creates filePath.json)
-			"-l",
-			"pl", // Force Polish language
-			"-ml",
-			"32",
-			"-sow",
-			"-t",
-			"8",
-			"-nt",
-			"-of",
-			path.join(
-				process.cwd(),
-				"transcriptions",
-				folderDate,
-				path.basename(filePath),
-			),
-		]);
+	const whisperUrl =
+		process.env.WHISPER_SERVER_URL ?? "http://127.0.0.1:8080/inference";
 
-		// Optional: if you want to see Whisper's internal logs, uncomment these
-		// whisper.stdout.on("data", (data) => console.log(`stdout: ${data}`));
-		// whisper.stderr.on("data", (data) => console.error(`stderr: ${data}`));
+	const form = new FormData();
+	form.append("file", Bun.file(filePath), path.basename(filePath));
+	form.append("model", "whisper-1");
+	form.append("language", "pl");
+	form.append("response_format", "verbose_json");
 
-		whisper.on("close", (code) => {
-			if (code === 0) {
-				resolve();
-			} else {
-				reject(new Error(`Whisper exited with code ${code}`));
-			}
-		});
-
-		whisper.on("error", (err) => {
-			reject(err);
-		});
+	const response = await fetch(whisperUrl, {
+		method: "POST",
+		body: form,
+		signal: AbortSignal.timeout(10 * 60 * 1000),
 	});
+	if (!response.ok) {
+		throw new Error(
+			`Whisper server responded with ${response.status} ${response.statusText}`,
+		);
+	}
+	const responseData = await response.json();
+
+	const transcriptDir = path.join(folderDate, "transcripts");
+	fs.mkdirSync(transcriptDir, { recursive: true });
+
+	const outputPath = path.join(
+		transcriptDir,
+		`${path.basename(filePath)}.json`,
+	);
+	const archivePayload = buildArchivePayload(responseData ?? {});
+	fs.writeFileSync(outputPath, JSON.stringify(archivePayload, null, 2));
 }
 
 function formatTime(ms: number): string {
@@ -63,28 +83,88 @@ function formatTime(ms: number): string {
 }
 
 export async function transcribeSession(dateFolder: string) {
-	const folderPath = path.join(process.cwd(), "recordings", dateFolder);
+	const sessionsPath = path.join(process.cwd(), "sessions");
+	const sessions = fs.readdirSync(sessionsPath);
+	const folderName = sessions.find((f) => f.startsWith(dateFolder));
 
+	if (!folderName) {
+		throw new Error(`Folder not found: ${folderName}`);
+	}
+
+	const folderPath = path.join(sessionsPath, folderName, "audio");
 	if (!fs.existsSync(folderPath)) {
-		console.error(`❌ Folder not found: ${folderPath}`);
-		process.exit(1);
+		throw new Error(`Folder not found: ${folderPath}`);
 	}
 
 	console.log(`Scanning folder: ${folderPath}`);
+	const skippedTinyFiles: string[] = [];
 	const files = fs
 		.readdirSync(folderPath)
-		.filter((file) => file.endsWith(".mp3"))
-		.sort(); // Sorts chronologically based on our HHMMSS filename format
+		.filter((file) => {
+			if (!file.endsWith(".wav")) {
+				return false;
+			}
+
+			const filePath = path.join(folderPath, file);
+			const stats = fs.statSync(filePath);
+			if (stats.size < MIN_AUDIO_FILE_SIZE_BYTES) {
+				skippedTinyFiles.push(file);
+				return false;
+			}
+
+			return true;
+		})
+		.sort((a, b) => {
+			const partA = a.split("-")[0];
+			const partB = b.split("-")[0];
+
+			if (!partA || !partB) {
+				return a.localeCompare(b);
+			}
+
+			const numA = parseInt(partA, 10);
+			const numB = parseInt(partB, 10);
+
+			const isANaN = isNaN(numA);
+			const isBNaN = isNaN(numB);
+
+			// If both prefixes are not valid numbers, fall back to alphabetical comparison
+			if (isANaN && isBNaN) {
+				return a.localeCompare(b);
+			}
+
+			// Move filenames without valid leading numbers to the end
+			if (isANaN) return 1;
+			if (isBNaN) return -1;
+
+			// Sort numerically
+			if (numA !== numB) {
+				return numA - numB;
+			}
+
+			// Secondary sort alphabetically if the leading numbers are identical
+			return a.localeCompare(b);
+		});
 
 	if (files.length === 0) {
-		console.log("No audio files found.");
+		console.log("No .wav audio files found.");
+		if (skippedTinyFiles.length > 0) {
+			console.log(
+				`Skipped ${skippedTinyFiles.length} tiny audio files under ${MIN_AUDIO_FILE_SIZE_BYTES} bytes.`,
+			);
+		}
 		return;
 	}
 
 	console.log(`Found ${files.length} audio clips.`, files);
-	if (!fs.existsSync(path.join(process.cwd(), "transcriptions", dateFolder))) {
-		fs.mkdirSync(path.join(process.cwd(), "transcriptions", dateFolder));
+	if (skippedTinyFiles.length > 0) {
+		console.log(
+			`Skipped ${skippedTinyFiles.length} tiny audio files under ${MIN_AUDIO_FILE_SIZE_BYTES} bytes.`,
+		);
 	}
+	fs.mkdirSync(path.join(process.cwd(), "transcriptions", dateFolder), {
+		recursive: true,
+	});
 	console.log(
 		`Starting ${MAX_CONCURRENT_WHISPERS} concurrent Whisper workers...\n`,
 	);
@@ -118,11 +198,11 @@ export async function transcribeSession(dateFolder: string) {
 		// Create the async task
 		const task = async () => {
 			try {
-				await runWhisperCommand(dateFolder, filePath);
+				await runWhisperCommand(path.join(sessionsPath, folderName), filePath);
 				processedCount++;
 			} catch (error) {
 				failedCount++;
-				//console.error(`❌ Failed ${file}:`, error);
+				console.error(`\n❌ Failed ${file}:`, error);
 			} finally {
 				updateProgress();
 			}

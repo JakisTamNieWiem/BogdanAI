@@ -1,16 +1,16 @@
 import { EndBehaviorType, type VoiceReceiver } from "@discordjs/voice";
-import { type ChildProcess, spawn } from "child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import type { User } from "discord.js";
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
+import { logger } from "@/logger.js";
+import { userToCharacterMap } from "./userToCharacterMap";
 
 // ---------------------------------------------------------
 // 🚀 THE IMMORTAL OGG MULTIPLEXER 🚀
-// Completely replaces `opusscript`. Wraps raw Discord audio
-// into Ogg pages so FFmpeg can safely decode it natively!
+// Wrap raw Discord Opus packets into Ogg pages for FFmpeg.
 // ---------------------------------------------------------
 
-// OGG-SPECIFIC CRC32 Checksum Table (Polynomial 0x04C11DB7)
 const crc32Table = new Uint32Array(256);
 for (let i = 0; i < 256; i++) {
 	let r = i << 24;
@@ -21,7 +21,6 @@ for (let i = 0; i < 256; i++) {
 }
 
 function calculateCrc32(buffer: Buffer): number {
-	// Ogg CRC starts at 0, not 0xFFFFFFFF
 	let crc = 0;
 	for (let i = 0; i < buffer.length; i++) {
 		crc = ((crc << 8) >>> 0) ^ crc32Table[((crc >>> 24) ^ buffer[i]!) & 0xff]!;
@@ -37,12 +36,12 @@ class OggOpusMultiplexer {
 	public createHeaders(): Buffer {
 		const opusHead = Buffer.alloc(19);
 		opusHead.write("OpusHead", 0);
-		opusHead.writeUInt8(1, 8); // Version
-		opusHead.writeUInt8(2, 9); // Channels (Stereo)
-		opusHead.writeUInt16LE(3840, 10); // Pre-skip
-		opusHead.writeUInt32LE(48000, 12); // Sample rate
-		opusHead.writeUInt16LE(0, 16); // Gain
-		opusHead.writeUInt8(0, 18); // Channel mapping
+		opusHead.writeUInt8(1, 8);
+		opusHead.writeUInt8(2, 9);
+		opusHead.writeUInt16LE(3840, 10);
+		opusHead.writeUInt32LE(48000, 12);
+		opusHead.writeUInt16LE(0, 16);
+		opusHead.writeUInt8(0, 18);
 
 		const opusTags = Buffer.from(
 			"OpusTags\x08\x00\x00\x00Overseer\x00\x00\x00\x00",
@@ -50,7 +49,7 @@ class OggOpusMultiplexer {
 		);
 
 		return Buffer.concat([
-			this.createPage(opusHead, 0x02, 0), // 0x02 = Beginning of Stream
+			this.createPage(opusHead, 0x02, 0),
 			this.createPage(opusTags, 0x00, 0),
 		]);
 	}
@@ -73,10 +72,8 @@ class OggOpusMultiplexer {
 		header.write("OggS", 0);
 		header.writeUInt8(0, 4);
 		header.writeUInt8(headerType, 5);
-
 		header.writeUInt32LE(granulePos & 0xffffffff, 6);
 		header.writeUInt32LE(Math.floor(granulePos / 0x100000000), 10);
-
 		header.writeUInt32LE(this.serial, 14);
 		header.writeUInt32LE(this.pageSeq++, 18);
 		header.writeUInt32LE(0, 22);
@@ -85,204 +82,339 @@ class OggOpusMultiplexer {
 
 		const page = Buffer.concat([header, packet]);
 		page.writeUInt32LE(calculateCrc32(page), 22);
-
 		return page;
 	}
 
 	public writePacket(packet: Buffer): Buffer {
-		this.granule += 960; // 20ms of audio at 48kHz
+		this.granule += 960;
 		return this.createPage(packet, 0x00, this.granule);
 	}
-	// NEW: Closes the Ogg stream cleanly so FFmpeg doesn't think it's corrupted
+
 	public writeEndStream(): Buffer {
-		// 0x04 is the End of Stream (EOS) flag in Ogg
 		return this.createPage(Buffer.alloc(0), 0x04, this.granule);
 	}
 }
-// ---------------------------------------------------------
-
-export const userToCharacterMap: Record<string, string> = {
-	"298520910430863363": "Judasz",
-	"350942764407717888": "Ibrahim",
-	"403602142046453762": "Jakub",
-	"713455223179575387": "Jimmy",
-	"877572265707970560": "Ignacy",
-	"427920650141958164": "DM-1",
-	"375337551856402444": "DM-2",
-	"501009127657701376": "Jyndrek",
-	"441699742788091930": "Hektor",
-	"647861193620324392": "Hoshi",
-	"503986482156011530": "Yami",
-};
-
-export const userToCharacterMapWarhammer: Record<string, string> = {
-	"298520910430863363": "Abramo",
-	"403602142046453762": "Dante",
-	"375337551856402444": "Matteo",
-	"441699742788091930": "Vittorio",
-	"1261710322100605011": "DM",
-};
-
-// --- ANTI-ZOMBIE PROCESS SYSTEM ---
-const activeFfmpegProcesses = new Set<ChildProcess>();
-
-export const killAllFfmpeg = () => {
-	for (const ffmpeg of activeFfmpegProcesses) {
-		try {
-			ffmpeg.kill("SIGKILL");
-		} catch (e) {}
-	}
-};
-
-process.on("exit", killAllFfmpeg);
-process.on("SIGINT", () => {
-	killAllFfmpeg();
-	process.exit(0);
-});
-process.on("SIGTERM", () => {
-	killAllFfmpeg();
-	process.exit(0);
-});
-process.on("uncaughtException", (err) => {
-	console.error("Uncaught exception, shutting down:", err);
-	killAllFfmpeg();
-	process.exit(1);
-});
 
 export const activeRecordings = new Set<string>();
+
+type ActiveProcess = {
+	child: ChildProcess;
+	closeGracefully: () => void;
+	forceKill: () => void;
+	forceKillTimer?: NodeJS.Timeout;
+};
+
+const activeFfmpegProcesses = new Map<string, ActiveProcess>();
+let shutdownHooksRegistered = false;
+
+function isWindows() {
+	return process.platform === "win32";
+}
+
+function forceKillProcess(processRef: ChildProcess) {
+	try {
+		processRef.kill(isWindows() ? undefined : "SIGKILL");
+	} catch {}
+}
+
+export const killAllFfmpeg = () => {
+	logger.warn(
+		{
+			activeFfmpegProcesses: activeFfmpegProcesses.size,
+		},
+		"Closing active FFmpeg processes.",
+	);
+	for (const processRef of activeFfmpegProcesses.values()) {
+		processRef.closeGracefully();
+	}
+
+	setTimeout(() => {
+		for (const processRef of activeFfmpegProcesses.values()) {
+			processRef.forceKill();
+		}
+	}, 4000).unref?.();
+};
+
+function registerShutdownHooks() {
+	if (shutdownHooksRegistered) {
+		return;
+	}
+	shutdownHooksRegistered = true;
+
+	process.on("exit", killAllFfmpeg);
+	process.on("SIGINT", () => {
+		logger.warn("Received SIGINT.");
+		killAllFfmpeg();
+		process.exit(0);
+	});
+	process.on("SIGTERM", () => {
+		logger.warn("Received SIGTERM.");
+		killAllFfmpeg();
+		process.exit(0);
+	});
+	process.on("uncaughtException", (error) => {
+		logger.error(
+			{ err: error },
+			"Uncaught exception, closing FFmpeg processes.",
+		);
+		killAllFfmpeg();
+		process.exit(1);
+	});
+}
+
+function ensureDir(dirPath: string) {
+	if (!fs.existsSync(dirPath)) {
+		fs.mkdirSync(dirPath, { recursive: true });
+	}
+}
+
+type CreateListeningStreamOptions = {
+	sessionId: number;
+	sessionKey: string;
+	sequence: number;
+	guildId: string;
+	campaignId: number | null;
+	onRecordingSaved: (clip: {
+		audioFilePath: string;
+		sequence: number;
+		sessionId: number;
+		userId: string;
+	}) => Promise<void>;
+};
 
 export async function createListeningStream(
 	receiver: VoiceReceiver,
 	user: User,
+	options: CreateListeningStreamOptions,
 ) {
-	if (activeRecordings.has(user.id)) return;
+	registerShutdownHooks();
 
-	activeRecordings.add(user.id);
+	const recordingKey = `${options.sessionId}:${user.id}`;
+	if (activeRecordings.has(recordingKey)) {
+		logger.debug(
+			{
+				sessionId: options.sessionId,
+				sessionKey: options.sessionKey,
+				userId: user.id,
+				username: user.username,
+			},
+			"Recording stream already active for speaker.",
+		);
+		return false;
+	}
+
+	activeRecordings.add(recordingKey);
 
 	const opusStream = receiver.subscribe(user.id, {
 		end: {
 			behavior: EndBehaviorType.AfterSilence,
-			duration: 5000,
+			duration: 2000,
 		},
 	});
 
-	const now = new Date();
-	const year = now.getFullYear();
-	const month = String(now.getMonth() + 1).padStart(2, "0");
-	const day = String(now.getDate()).padStart(2, "0");
+	const sessionRoot = path.join(process.cwd(), "sessions", options.sessionKey);
+	const audioDir = path.join(sessionRoot, "audio");
+	ensureDir(audioDir);
 
-	const folderName = `${year}-${month}-${day}`;
-	const folderPath = path.join(process.cwd(), "recordings", folderName);
+	const startedAtMs = Date.now();
+	const fileName = `${options.sequence}-${startedAtMs}-${user.id}.wav`;
+	const filePath = path.join(audioDir, fileName);
+	const speaker = userToCharacterMap[user.id] ?? user.username;
 
-	if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
+	logger.info(
+		{
+			sessionId: options.sessionId,
+			sessionKey: options.sessionKey,
+			sequence: options.sequence,
+			userId: user.id,
+			speaker,
+			audioFilePath: filePath,
+		},
+		"Started recording speaker clip.",
+	);
 
-	const fileName = `${now.getTime()}-${user.id}.ogg`;
-	const filePath = path.join(folderPath, fileName);
-
-	let isDestroyed = false;
 	const ffmpeg = spawn("ffmpeg", [
 		"-f",
-		"ogg", // Input is the multiplexed Ogg stream
+		"ogg",
 		"-i",
-		"pipe:0", // Read from stdin
+		"pipe:0",
+		"-af",
+		"afftdn=nf=-25,dynaudnorm",
 		"-ar",
-		"48000", // Output Sample Rate: 48 kHz
+		"16000",
 		"-ac",
-		"2", // Output Channels: Stereo
+		"1",
 		"-c:a",
-		"libopus", // Audio codec: Opus (high compression, small file)
-		"-b:a",
-		"64k", // 64kbps is perfect for Ogg/Opus voice (very small)
+		"pcm_s16le",
 		"-f",
-		"ogg", // Output format: Ogg container
-		"-y", // Overwrite
+		"wav",
+		"-y",
 		filePath,
 	]);
 
-	activeFfmpegProcesses.add(ffmpeg);
-
 	let ffmpegLogs = "";
-	ffmpeg.stderr.on("data", (data: Buffer) => {
-		// Capture the last ~3000 characters of FFmpeg's internal logs
-		ffmpegLogs += data.toString();
-		if (ffmpegLogs.length > 3000)
-			ffmpegLogs = ffmpegLogs.substring(ffmpegLogs.length - 3000);
+	let validPacketsWritten = 0;
+	let isDestroyed = false;
+	let closeRequested = false;
+	const muxer = new OggOpusMultiplexer();
+
+	const processRef: ActiveProcess = {
+		child: ffmpeg,
+		closeGracefully: () => {
+			if (closeRequested) {
+				return;
+			}
+			closeRequested = true;
+			try {
+				ffmpeg.stdin.write(muxer.writeEndStream());
+			} catch {}
+			try {
+				ffmpeg.stdin.end();
+			} catch {}
+
+			processRef.forceKillTimer = setTimeout(() => {
+				processRef.forceKill();
+			}, 4000);
+			processRef.forceKillTimer.unref?.();
+		},
+		forceKill: () => {
+			clearTimeout(processRef.forceKillTimer);
+			forceKillProcess(ffmpeg);
+		},
+	};
+	activeFfmpegProcesses.set(recordingKey, processRef);
+
+	ffmpeg.stderr.on("data", (chunk: Buffer) => {
+		ffmpegLogs += chunk.toString();
+		if (ffmpegLogs.length > 3000) {
+			ffmpegLogs = ffmpegLogs.slice(-3000);
+		}
 	});
 
-	console.log(`Started recording ${filePath}`);
-	// Spin up a fresh Ogg Multiplexer for this recording session
-	const muxer = new OggOpusMultiplexer();
-	let validPacketsWritten = 0; // 2. Track if they actually spoke!
-
-	// Inject the mandatory Opus headers into FFmpeg before sending audio
-	ffmpeg.stdin.write(muxer.createHeaders());
 	try {
 		ffmpeg.stdin.write(muxer.createHeaders());
-	} catch (e) {
-		console.error(`Error writing headers to FFmpeg: ${e}`);
+	} catch (error) {
+		logger.error(
+			{ err: error, userId: user.id, speaker, audioFilePath: filePath },
+			"Failed to write Ogg headers.",
+		);
 	}
-	opusStream.on("data", (chunk: Buffer) => {
-		if (isDestroyed || !chunk) return;
 
-		if (chunk.length < 10) return;
+	opusStream.on("data", (chunk: Buffer) => {
+		if (isDestroyed || chunk.length < 10) {
+			return;
+		}
 
 		try {
 			ffmpeg.stdin.write(muxer.writePacket(chunk));
-			validPacketsWritten++; // Log that we successfully wrote real audio
+			validPacketsWritten++;
 		} catch (error) {
-			console.error(`Error writing Ogg frame: ${(error as Error).message}`);
+			logger.error(
+				{ err: error, userId: user.id, speaker, audioFilePath: filePath },
+				"Failed to write audio packet to FFmpeg.",
+			);
 		}
 	});
 
 	const cleanup = () => {
-		if (isDestroyed) return;
+		if (isDestroyed) {
+			return;
+		}
 		isDestroyed = true;
-
-		activeRecordings.delete(user.id);
-
-		try {
-			// Send the clean End-of-Stream flag
-			ffmpeg.stdin.write(muxer.writeEndStream());
-			// Close the pipe
-			ffmpeg.stdin.end();
-		} catch (e) {}
+		activeRecordings.delete(recordingKey);
+		processRef.closeGracefully();
 	};
 
-	opusStream.on("end", () => {
-		console.log(
-			`Finished receiving audio from ${user.username}, finalizing ${filePath}`,
+	opusStream.on("end", cleanup);
+	opusStream.on("close", cleanup);
+	opusStream.on("error", (error) => {
+		logger.error(
+			{ err: error, userId: user.id, speaker, audioFilePath: filePath },
+			"Opus stream failed.",
 		);
 		cleanup();
 	});
 
-	opusStream.on("error", (err) => {
-		console.error(`Opus stream error for ${user.username}: ${err.message}`);
-		cleanup();
-	});
-
-	ffmpeg.on("close", (code) => {
-		activeFfmpegProcesses.delete(ffmpeg);
+	ffmpeg.on("close", async (code) => {
+		clearTimeout(processRef.forceKillTimer);
+		activeFfmpegProcesses.delete(recordingKey);
+		activeRecordings.delete(recordingKey);
 
 		if (code === 0) {
-			console.log(`Successfully recorded ${filePath}`);
-		}
-		// 3. Prevent the "Zero-Audio Crash" from spamming your console
-		else if (validPacketsWritten === 0) {
-			console.log(
-				`[IGNORE] Deleted ${filePath} because it contained no actual audio.`,
+			if (validPacketsWritten === 0) {
+				logger.debug(
+					{
+						sessionId: options.sessionId,
+						sequence: options.sequence,
+						userId: user.id,
+						speaker,
+						audioFilePath: filePath,
+					},
+					"Dropping empty recording clip.",
+				);
+				try {
+					if (fs.existsSync(filePath)) {
+						fs.unlinkSync(filePath);
+					}
+				} catch {}
+				return;
+			}
+
+			await options.onRecordingSaved({
+				audioFilePath: filePath,
+				sequence: options.sequence,
+				sessionId: options.sessionId,
+				userId: user.id,
+			});
+			logger.info(
+				{
+					sessionId: options.sessionId,
+					sessionKey: options.sessionKey,
+					sequence: options.sequence,
+					userId: user.id,
+					speaker,
+					audioFilePath: filePath,
+					validPacketsWritten,
+				},
+				"Saved speaker clip.",
 			);
-			// Delete the broken/empty file from the disk to keep the folder clean
+			return;
+		}
+
+		if (validPacketsWritten === 0) {
+			logger.debug(
+				{
+					code,
+					sessionId: options.sessionId,
+					sequence: options.sequence,
+					userId: user.id,
+					speaker,
+					audioFilePath: filePath,
+				},
+				"Dropping empty recording clip after FFmpeg exit.",
+			);
 			try {
-				if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-			} catch (e) {}
-		} else {
-			// If it fails but they ACTUALLY spoke, print the raw FFmpeg logs so we can see why!
-			console.warn(
-				`FFmpeg closed with error code ${code} for file ${filePath}`,
-			);
-			console.warn(
-				`\n--- FFMPEG FATAL LOGS ---\n${ffmpegLogs.trim()}\n-------------------------\n`,
-			);
+				if (fs.existsSync(filePath)) {
+					fs.unlinkSync(filePath);
+				}
+			} catch {}
+			return;
 		}
+
+		logger.warn(
+			{
+				code,
+				sessionId: options.sessionId,
+				sessionKey: options.sessionKey,
+				sequence: options.sequence,
+				userId: user.id,
+				speaker,
+				filePath,
+				ffmpegLogs: ffmpegLogs.trim(),
+			},
+			"FFmpeg exited with a non-zero code. Keeping the audio file for manual recovery.",
+		);
 	});
+
+	return true;
 }
