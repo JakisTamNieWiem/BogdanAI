@@ -8,8 +8,8 @@ RUN apt-get update \
 	&& apt-get install -y --no-install-recommends python3 make g++ \
 	&& rm -rf /var/lib/apt/lists/*
 
-COPY package.json bun.lock ./
-RUN bun install --production --no-frozen-lockfile
+COPY package.json ./
+RUN CI=false bun install --production
 
 COPY . .
 RUN mkdir -p /app/storage \
