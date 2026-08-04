@@ -18,6 +18,4 @@ RUN mkdir -p /app/storage \
 ENV NODE_ENV=production
 ENV DB_FILE_NAME=/app/storage/overseer.db
 
-USER bun
-
-CMD ["sh", "-c", "bun run migrate && bun run start"]
+CMD ["sh", "-c", "mkdir -p \"$(dirname \"$DB_FILE_NAME\")\" logs sessions transcriptions && bun run migrate && bun run start"]
