@@ -9,7 +9,7 @@ RUN apt-get update \
 	&& rm -rf /var/lib/apt/lists/*
 
 COPY package.json bun.lock ./
-RUN bun install --production
+RUN bun install --production --no-frozen-lockfile
 
 COPY . .
 RUN mkdir -p /app/storage \
